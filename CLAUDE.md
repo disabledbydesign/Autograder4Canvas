@@ -38,8 +38,46 @@ CLI (run directly via Bash):
   python3 "/Users/june/Documents/GitHub/Reframe/reframe_bootstrap.py" command ">> WEAVE"
   python3 "/Users/june/Documents/GitHub/Reframe/reframe_bootstrap.py" configure --intensity deep|medium|light
 
+## Research Pipeline
+
+This project has an active LLM research pipeline testing equity-sensitive
+observation and trajectory report generation. State is tracked in:
+
+- **`docs/research/session_log.md`** — read first. Dynamic state: what's done,
+  what's running, what's next. Updated by every agent session.
+- **`docs/research/experiment_log.md`** — verified findings with raw JSON references.
+  Paper evidence. Never delete entries.
+- **`data/research/raw_outputs/`** — test output JSON. Never commit, never delete.
+
+Use the `test-monitor` skill (`/test-monitor` or say "resume") to pick up
+research pipeline work. It reads the session log and orients automatically.
+
+### Key design principles (emerged from testing)
+
+- **Don't compress the perception; pass it through.** When an LLM produces a
+  qualitative reading, pass it forward — don't reduce it to structured fields.
+  Binary detection failed for this reason; the observation layer fixed it.
+  The trajectory report had the same bottleneck until the observation arc
+  passthrough was added (Apr 2026).
+- **Anti-enumeration.** Don't typologize every possible power dynamic pattern.
+  Give the model frameworks and let it observe. Enumerative prompt instructions
+  are fragile; generative framing scales. (See lens_templates.py concern
+  fragments for the generative approach.)
+- **Observation layer is the bottleneck.** Fixes to downstream prompts (report
+  generator, Teacher Notes) cannot surface what the observations didn't capture.
+  Fix upstream first.
+
 ## Development Reference
 
 MLX testing conventions, unit test suite details, and .gitignore recommendations
 live in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — read that before writing
 tests or running MLX pipelines.
+
+## graphify
+
+This project has a graphify knowledge graph at graphify-out/.
+
+Rules:
+- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
+- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- After modifying code files in this session, run `python3 -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"` to keep the graph current
