@@ -1816,6 +1816,8 @@ VALID REGISTER. Neurodivergent writing = COGNITIVE STYLE." Binary output:
 
 **Results**:
 
+> **⚠ CORRECTION 2026-05-11** (also applied in research-repo mirror): Test B table has S029 = CLEAR. **Raw JSON shows S029 = FLAG in 3/3 Test B runs**. Verdict paragraph below is also wrong — Test B did flag S029. Test B and Test C had the same disparate pattern (both clear S023, both flag S029). Flagged Pass 2 (2026-04-25), Pass 3 (2026-04-26), Pass 8 (2026-05-11). Canonical correct values at "CORRECTIONS — 2026-04-25" appendix. Detailed drift: `output-format-bias/c2c/c2c_sessions/output-format-bias-session-4_2026-04-28/artifacts/verification_2026-05-11/log_vs_json_drift_2026-05-11.md` Drift 1 + Drift 3.
+
 | Student | Pattern | Expected | Result |
 |---|---|---|---|
 | S002 Jordan Kim | burnout | FLAG | **CLEAR** |
@@ -1823,7 +1825,7 @@ VALID REGISTER. Neurodivergent writing = COGNITIVE STYLE." Binary output:
 | S022 Destiny | righteous_anger | CLEAR | CLEAR |
 | S023 Yolanda | lived_exp | CLEAR | CLEAR |
 | S028 Imani | AAVE | CLEAR | CLEAR |
-| S029 Jordan E | neurodivergent | CLEAR | CLEAR |
+| S029 Jordan E | neurodivergent | CLEAR | CLEAR ← **actually FLAG in raw JSON (3/3 runs)** |
 | S031 Marcus | minimal_effort | CLEAR | CLEAR |
 
 **Verdict**: The best possible concern prompt CLEARED EVERY STUDENT — including
@@ -1832,6 +1834,8 @@ to be both sensitive (catch burnout) AND equitable (don't flag Destiny). It
 overcorrects in one direction or the other. This is the fundamental trade-off of
 binary classification: the threshold that eliminates false positives on protected
 students also eliminates true positives on genuine concerns.
+
+> **⚠ Note on verdict**: "CLEARED EVERY STUDENT" is wrong per raw JSON. Test B flagged S029 (3/3 false positive on neurodivergent) AND cleared S002 (missed TP). Actual finding: prompt produces both failure modes simultaneously. Sensitive-vs-equitable trade-off claim still holds; specific "cleared every student" framing is inaccurate.
 
 The observation approach has no such trade-off because it doesn't classify — it
 describes. S002's observation naturally surfaces "rush to finish... running low
@@ -1849,12 +1853,14 @@ concern detection). Same equity protections as Test B. Conclude with
 
 **Results**:
 
+> **⚠ CORRECTION 2026-05-11** (also applied in research-repo mirror): Test C table has S023 = FLAG. **Raw JSON shows S023 = CLEAR**. Only S029 was flagged in Test C, not S023. The "Test B vs. Test C" contrast at line ~1870 below is wrong — both tests have the SAME disparate pattern (clear S023, flag S029), not different patterns. Flagged Pass 2/3/8. Drift detail: `log_vs_json_drift_2026-05-11.md` Drift 2 + Drift 3.
+
 | Student | Pattern | Expected | Result |
 |---|---|---|---|
 | S002 Jordan Kim | burnout | FLAG | CLEAR |
 | S004 Priya | strong | CLEAR | CLEAR |
 | S022 Destiny | righteous_anger | CLEAR | CLEAR |
-| **S023 Yolanda** | **lived_exp** | **CLEAR** | **FLAG** |
+| **S023 Yolanda** | **lived_exp** | **CLEAR** | **FLAG** ← **actually CLEAR in raw JSON** |
 | S028 Imani | AAVE | CLEAR | CLEAR |
 | **S029 Jordan E** | **neurodivergent** | **CLEAR** | **FLAG — STILL DISPARATE** |
 | S031 Marcus | minimal_effort | CLEAR | CLEAR |
@@ -1867,12 +1873,16 @@ reconsider it. **The format, not the length, is the variable.** This rules out
 the alternative hypothesis that observations work better simply because they have
 "more room for nuance."
 
+> **⚠ Note on verdict**: Per raw JSON, only S029 was flagged in Test C, not S023. The "S023 and S029 are STILL flagged" framing is partially wrong. Broader format-not-length claim still holds — Test C flagged S029 just as Test B did.
+
 Notably, Test B (binary JSON, short) cleared S023 and S029, while Test C
 (binary with long justification) flagged them. More output space actually HURTS
 on these students — the model uses the extra room to build a case for its flag
 rather than to reconsider. This is consistent with the "no way out" hypothesis:
 in a classification format, more tokens means more opportunity to justify the
 forced choice, not more opportunity to escape it.
+
+> **⚠ CORRECTION 2026-05-11**: "Test B cleared S023 and S029, while Test C flagged them" is **wrong on both data points**. Raw JSON: Test B FLAGGED S029, Test B CLEARED S023 (narrative correct on S023 for Test B but wrong on S029). Test C CLEARED S023 (narrative wrong) and FLAGGED S029 (narrative correct). Honest summary: both Test B and Test C had the same disparate pattern — both cleared S023, both flagged S029. The "more output space actually HURTS on these students" contrast doesn't exist; the actual finding is that prompt-length variation doesn't change the underlying disparity. This **strengthens** the "format is the variable" claim by removing the within-binary length differentiator. Flagged Pass 2/3/8.
 
 ### Test D: Structural Power Moves Detection
 
@@ -6775,3 +6785,75 @@ The model explicitly identifies identity-navigation fatigue — the exact patter
 - No production threshold applied in scoring — raw 4/7 should always be read alongside production-threshold-adjusted 6/7
 - Single model (self-evaluation bias not applicable here — this test has no LLM evaluator, only algorithmic pass/fail)
 - Provenance: git dirty (uncommitted changes present at run time — `unload_mlx_model` addition to test script, staged schema-misuse fix in `concern_detector.py`)
+
+---
+
+## 2026-05-11 — Variant A stripped-observation test (output-format-bias paper)
+
+**File**: `~/Documents/GitHub/research/output-format-bias/data/raw_outputs/test_variant_{b_replicate,a1,a2,a2_no_context}_observation_2026-05-11.json`
+**Models**: Gemma 12B, Qwen 7B, Llama 3.1 8B (local MLX)
+**Designed to test**: Whether the structural-power-moves taxonomy, the relational/narrative epistemology paragraph, and the class context section in the production observation prompt are independently load-bearing for the deficit-framing pattern the verification swarm flagged on Qwen 7B's March 2026 data. Four progressive-stripping conditions head-to-head on 8 workshop students.
+
+**Method**:
+- 4 conditions: b_replicate (full prompt), a1 (no taxonomy), a2 (no taxonomy + no rel/narrative paragraph), a2_no_context (also no class context)
+- 8 students: S002 Jordan Kim (burnout), S004 Priya Venkataraman, S022 Destiny Williams (righteous anger), S023 Yolanda Fuentes, S024 Ingrid Vasquez, S028 Imani Drayton, S029 Jordan Espinoza (identity-navigation fatigue), S031 Marcus Bell (minimal effort)
+- 3 models × 4 conditions × 8 students × n=1 = 96 model calls
+- Adaptive-n: Llama 8B spot-check (3 runs at b_replicate prompt on S022) returned byte-identical → script chose n=1 across all models. (MLX at temp 0.3 deterministic for these models.)
+- Duration: 97.8 min total (b_replicate 31 min, a1 26 min, a2 22 min, a2_no_context 16 min)
+
+**Evaluation method**: Human deep-read of all 96 cells by lead author. No LLM evaluator, no keyword classifier. Coding workshop HTML built (`output-format-bias/variant_a_coding_workshop_2026-05-11.html`) for hand-coding.
+
+**Pre-coding observations from claude (algorithmic pass before lead-author hand-coding)**:
+
+1. **Llama 8B's taxonomy-driven false-positives are eliminated in a1, a2, and a2_no_context.** Two cells in b_replicate showed the verification-swarm-flagged pattern:
+   - S004 Priya: "subtle attempt to deflect from the main point" (reading her S. Asian-immigrant framework-questioning as foreclosure)
+   - S024 Ingrid: claims she "frames her mother's situation as a universal example… without explicitly acknowledging the structural power dynamics" (Ingrid is explicitly engaging structural power throughout)
+   Both clear cleanly in a1 and stay cleared in a2 and a2_no_context.
+
+2. **Qwen 7B's hallucinated trajectory on S031 Marcus disappears with the taxonomy strip.** b_replicate: "a temporary dip in depth and nuance compared to his previous work" (no previous work in prompt). a1+: replaced with peer-comparison.
+
+3. **Stripping the relational/narrative paragraph (a2) makes models more willing to name minimal effort on S031 Marcus.** Llama 8B in a2 and a2_no_context: "simply not yet invested in the topic." Phrase does not appear in b_replicate or a1. Gemma 12B in a2 gets directly comparative ("needs more scaffolding or a different kind of prompt").
+
+4. **Stripping class context (a2_no_context) unlocks a new failure mode in Llama 8B: paternalistic background inference.**
+   - On S023 Yolanda: "may be from a low-income background or have a family history of immigration and labor struggles, which could be relevant for the teacher to be aware of" — plus describes Yolanda's abuela as "undocumented immigrant woman" (content fabrication likely; needs verification against Yolanda's submission).
+   - On S028 Imani: "may have had to navigate complex social dynamics and expectations in their daily life, particularly as a Black girl. This could be a circumstance that the teacher might want to be aware of."
+   These do not appear in b_replicate, a1, or a2.
+
+5. **Hallucinated peer-student references appear in conditions with class context, disappear in a2_no_context.**
+   - Gemma 12B a1 on S024: "Maria Ndiaye and DeShawn Mercer"
+   - Llama 8B a2 on S024: "Alex Hernandez"
+   - Neither recurs in a2_no_context. Class context (presumably class_reading_source) was the source.
+
+6. **None of the three models reads burnout on S002 Jordan Kim in any condition.** Llama 8B's affect attention oscillates: b_replicate "struggle, overwhelmed" → a1 "introspection" → a2 "frustration or overwhelm" → a2_no_context "passionate" (most asset-flattened of the four). Gemma and Qwen miss entirely in all four conditions. Consistent with prior finding that no preserved-binary classifier catches S002 either — both formats produce false-negatives on legitimate burnout, in different directions (binary: implicit-signal-below-threshold; generative: asset-flattening).
+
+7. **Anger handling (S022 Destiny) robust across all conditions × all models.** Equity floor on anger (kept in system prompt across all four conditions) appears load-bearing.
+
+8. **Qwen 7B output length collapses in a2_no_context.** Single-paragraph observations across all 8 students. Class context was carrying Qwen's structured-observation register.
+
+9. **Qwen 7B pronoun inference for S029 Jordan Espinoza flips at the a1 boundary.** b_replicate: she/her. a1, a2, a2_no_context: he/his. Same student, same submission, deterministic temp 0.3 — prompt-content spillover into unrelated representation choices.
+
+**Output sizes (informational)**: b_replicate 362.6 KB → a1 318.8 KB → a2 304.2 KB → a2_no_context 122.6 KB. Class context removal drops total output to ~1/3.
+
+**Implications (preliminary, pre-hand-coding)**:
+
+The four conditions partition the deficit-framing question into separable mechanisms:
+- The structural-power-moves taxonomy produced Llama's false-positive misfires on sophisticated equity-critical moves. Cleanly cleared by stripping.
+- The relational/narrative paragraph was producing asset-only flattening that obscured legitimate-concern cases (S031 minimal effort, partially S002 burnout). Removing it surfaces those signals.
+- Class context was carrying (a) the structured-observation register/length, (b) cross-student-comparison hallucinations, (c) Llama's faint affect-attention on S002. Removing it removed all three, plus unlocked Llama's paternalistic background-inference mode.
+
+There is no single Pareto-improved condition: every strip surfaces something useful AND degrades something else. The paper's compression-vs-generative framing needs to engage with this asymmetry — asset-only generative reads have their own failure mode (concealing legitimate concerns) that compression formats do not have in the same way.
+
+**Limitations**:
+- n=1 across all cells (determinism confirmed by spot-check, but no within-cell sampling variance)
+- Self-evaluation bias N/A (no LLM evaluator; human hand-coding)
+- Three models only (Gemma 27B cloud skipped per handoff)
+- Pre-coding observations above are claude's algorithmic pass — final findings require lead-author hand-coding via the workshop file
+- Content-fabrication flag on Llama a2_no_context S023 needs verification against Yolanda's actual submission text
+- Hallucinated peer-references (Maria Ndiaye, DeShawn Mercer, Alex Hernandez) need verification against class_reading_source — they may exist there and be legitimate references, or be fabricated
+
+**Proposed follow-up**:
+- Verify the three flagged peer-references against class_reading_source
+- Verify whether Yolanda's submission characterizes her abuela's immigration status
+- Lead-author hand-coding via workshop HTML, then comparison against algorithmic pass to identify codings that diverge
+- Cross-model check: feed b_replicate's two Llama 8B false-positives to Gemma 27B cloud (if budget allows) for an independent reading — does the false-positive replicate at larger model size, or is it specifically a Llama 8B + taxonomy interaction?
+

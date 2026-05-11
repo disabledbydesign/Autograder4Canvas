@@ -5,7 +5,20 @@ Old content gets archived to `docs/research/logs/` when > 200 lines.
 
 ---
 
-## Current state (2026-05-10)
+## Current state (2026-05-11)
+
+### Variant A stripped-observation run (output-format-bias paper)
+
+Launched + completed 2026-05-11. 4 conditions × 3 MLX models × 8 students × n=1 (Llama 8B spot-check returned byte-identical at temp 0.3). 97.8 min total. Output JSONs at `~/Documents/GitHub/research/output-format-bias/data/raw_outputs/test_variant_*_2026-05-11.json`. Coding workshop at `~/Documents/GitHub/research/output-format-bias/variant_a_coding_workshop_2026-05-11.html` (lead-author hand-coding pending).
+
+Three pre-coding findings worth flagging here for paper deadline (May 20):
+1. Llama 8B's two taxonomy-driven false-positives (S004 Priya "deflection", S024 Ingrid "fails to acknowledge structural power") clear cleanly in all three stripped conditions. Direct corroboration of the verification-swarm hypothesis.
+2. Stripping the relational/narrative paragraph (a2) makes Llama willing to name minimal effort on S031 Marcus ("not yet invested") — phrase does not appear in b_replicate or a1. Stripping that paragraph surfaces concern signals that asset-only scaffolding obscures.
+3. Stripping class context (a2_no_context) unlocks a new Llama failure mode: paternalistic background inference on S023 + S028. Plus possible content fabrication on S023 (Llama describes Yolanda's abuela as undocumented — needs verification against the submission text).
+
+No model in any condition reads burnout on S002 Jordan Kim. Consistent with prior memory note that no preserved-binary catches S002 either.
+
+Experiment log entry written (`docs/research/experiment_log.md`, 2026-05-11 section). Three follow-ups noted there: verify hallucinated peer-references against class_reading_source, verify Yolanda submission text re: abuela immigration status, lead-author hand-coding via workshop HTML.
 
 ### Context since last session log (2026-04-13)
 
