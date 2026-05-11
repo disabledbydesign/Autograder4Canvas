@@ -32,6 +32,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 CORPUS_PATH = ROOT / "data" / "demo_corpus" / "ethnic_studies.json"
 CLASS_READING_PATH = ROOT / "data" / "demo_baked" / "checkpoints" / "ethnic_studies_gemma12b_mlx_class_reading.json"
+# Overridden at runtime by --corpus flag; tests that use CLASS_READING_PATH
+# (synthesis-first variants) will need a matching checkpoint — see --class-reading.
 OUTPUT_DIR = ROOT / "data" / "research" / "raw_outputs"
 
 logging.basicConfig(
@@ -2145,7 +2147,7 @@ def test_m_production_detector(model_key: str = "gemma12b"):
     print(f"  TEST M: Production Concern Detector ({model_key})")
     print(f"{'='*60}")
 
-    from insights.concern_detector import detect_concerns
+    from research.concern_detector import detect_concerns
     from insights.patterns import signal_matrix_classify
 
     corpus = load_corpus()
@@ -2415,6 +2417,7 @@ def test_n_four_axis_submissions(model_key: str = "gemma12b"):
         ("S004", "strong", "ENGAGED"),
         ("S022", "righteous_anger", "ENGAGED"),
         ("S023", "lived_exp", "ENGAGED"),
+        ("S024", "lived_exp", "ENGAGED"),
         ("S028", "AAVE", "ENGAGED"),
         ("S029", "neurodivergent", "ENGAGED"),
         ("S031", "minimal_effort", "NONE"),  # minimal summary, no wellbeing signal → NONE
@@ -2838,8 +2841,8 @@ def test_p_two_pass(model_key: str = "gemma12b"):
     all_cases = []
     corpus_cases = [
         ("S002", "burnout"), ("S004", "strong"), ("S022", "righteous_anger"),
-        ("S023", "lived_exp"), ("S028", "AAVE"), ("S029", "neurodivergent"),
-        ("S031", "minimal_effort"),
+        ("S023", "lived_exp"), ("S024", "lived_exp"), ("S028", "AAVE"),
+        ("S029", "neurodivergent"), ("S031", "minimal_effort"),
     ]
     for sid, pattern in corpus_cases:
         s = corpus[sid]
@@ -3257,7 +3260,9 @@ def test_q_27b_probes():
 # Runner
 # ---------------------------------------------------------------------------
 
-def _run_test_subprocess(test_id: str, model: str, runs: int) -> Optional[int]:
+def _run_test_subprocess(test_id: str, model: str, runs: int,
+                          corpus: Optional[Path] = None,
+                          class_reading: Optional[Path] = None) -> Optional[int]:
     """Run a single test in an isolated subprocess.
 
     Metal GPU memory is only fully reclaimed when the process exits.
@@ -3274,10 +3279,15 @@ def _run_test_subprocess(test_id: str, model: str, runs: int) -> Optional[int]:
         "--model", model,
         "--runs", str(runs),
     ]
+    if corpus:
+        cmd += ["--corpus", str(corpus)]
+    if class_reading:
+        cmd += ["--class-reading", str(class_reading)]
     log.info("Subprocess for Test %s: %s", test_id, " ".join(cmd))
     # F, G, H, J are longer tests — many inferences each
     # K is cloud-only (no MLX) but may take time due to rate limits
-    timeout = 3600 if test_id in ("F", "G", "H", "J", "K") else 900
+    # P is two-pass (N + CHECK-IN on all ENGAGED), needs extra headroom
+    timeout = 3600 if test_id in ("F", "G", "H", "J", "K", "P") else 900
     result = sp.run(cmd, timeout=timeout)
     return result.returncode
 
@@ -3367,11 +3377,27 @@ def main():
                         help="Model key (gemma12b, qwen7b)")
     parser.add_argument("--runs", type=int, default=5,
                         help="Number of runs for Test A/E (default 5)")
+    parser.add_argument("--corpus", default=None,
+                        help="Path to corpus JSON (default: data/demo_corpus/ethnic_studies.json)")
+    parser.add_argument("--class-reading", default=None,
+                        help="Path to pre-baked class reading checkpoint (for synthesis-first tests)")
     parser.add_argument("--single-test", default=None,
                         help="(internal) Run a single test in this process")
     parser.add_argument("--no-subprocess", action="store_true",
                         help="Run all tests in-process (no subprocess isolation)")
     args = parser.parse_args()
+
+    # Apply corpus overrides before any test runs
+    if args.corpus:
+        global CORPUS_PATH
+        CORPUS_PATH = Path(args.corpus)
+        if not CORPUS_PATH.is_absolute():
+            CORPUS_PATH = ROOT / CORPUS_PATH
+    if args.class_reading:
+        global CLASS_READING_PATH
+        CLASS_READING_PATH = Path(args.class_reading)
+        if not CLASS_READING_PATH.is_absolute():
+            CLASS_READING_PATH = ROOT / CLASS_READING_PATH
 
     # --- Single-test mode: called from subprocess ---
     if args.single_test:
@@ -3417,7 +3443,9 @@ def main():
             result_counts[test_id] = "done"
         else:
             try:
-                rc = _run_test_subprocess(test_id, model, args.runs)
+                rc = _run_test_subprocess(test_id, model, args.runs,
+                                          corpus=CORPUS_PATH if args.corpus else None,
+                                          class_reading=CLASS_READING_PATH if args.class_reading else None)
                 result_counts[test_id] = "OK" if rc == 0 else f"exit {rc}"
             except Exception as e:
                 log.error("Test %s subprocess failed: %s", test_id, e)

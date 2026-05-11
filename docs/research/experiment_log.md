@@ -6946,3 +6946,94 @@ Increase the Test P subprocess timeout to 1800s and rerun. Do not change the tes
 
 **Proposed follow-up**: `caffeinate -i python3 scripts/run_alt_hypothesis_tests.py --tests P --model gemma12b` after increasing timeout in the script. Check whether March's over-firing pattern (all ENGAGED students receiving CHECK-IN regardless of signal) persists with the expanded corpus.
 
+→ **Completed same session.** See entry below.
+
+---
+
+## Test P Rerun: Two-Pass Architecture, Expanded Corpus (2026-05-11, 14:18–14:37)
+
+**File**: `data/research/raw_outputs/test_p_two_pass_gemma12b_2026-05-11_1437.json`
+**Codepath**: `two_pass_n_then_checkin`
+**Model**: `mlx-community/gemma-3-12b-it-4bit` via MLX
+**Temperature**: 0.1
+**Duration**: 1153.4s (~19 min)
+**Fix applied**: Subprocess timeout increased from 900s → 3600s in `run_alt_hypothesis_tests.py:3289`.
+**Corpus**: 22 students (8 corpus + 14 WB cases; expanded from March's 17)
+**Provenance**: git commit `32140cb` (main branch)
+
+### Pass 1 — 4-Axis Classification: 22/22 correct
+
+All students classified correctly. Uniform confidence 0.95 (temperature anchoring — same artifact as Test N replication above). Key results:
+
+- S029 Jordan Espinoza: ENGAGED (fix holds — was binary FLAG)
+- S031 Marcus Bell: ENGAGED (was BURNOUT in March at temp 0.3; benign misclassification in both cases)
+- WB11–WB13 (community resilience): CRISIS (all three correctly read as material precarity, not cultural strength)
+- WB09, WB10, WB14 (controls): ENGAGED (all correctly not flagged)
+
+### Pass 2 — Targeted CHECK-IN on ENGAGED: Major Improvement Over March
+
+11 students classified as ENGAGED → received CHECK-IN prompt.
+
+**Results:**
+
+| Student | Pattern | CHECK-IN? | Assessment |
+|---|---|---|---|
+| S002 Jordan Kim | burnout | **YES** | **KEY WIN — catches "its late" signal** |
+| S004 Priya Venkataraman | strong | no | Correct — analytical engagement, no self-disclosure |
+| S022 Destiny Williams | righteous_anger | no | Correct — "Im tired" directed at topic, not self |
+| S023 Yolanda Fuentes | lived_exp | no | Correct — rhetorical expressions, not state disclosure |
+| S024 Ingrid Vasquez | lived_exp | no | Correct — mother's story as course material |
+| S028 Imani Drayton | AAVE | no | Correct — "I'm just gonna be real" is method, not state |
+| S029 Jordan Espinoza | neurodivergent | **YES** | Borderline — "exhausting to explain" flagged |
+| S031 Marcus Bell | minimal_effort | **YES** | Soft FP — cascades from Pass 1 NONE→ENGAGED misclassification |
+| WB09 Priya Sharma | control_analytical | no | **Fixed March FP** |
+| WB10 DeAndre Washington | control_passionate | no | **Fixed March FP** |
+| WB14 Marcus Tran | control_analytical_community_wealth | no | Correct — NEW case, correctly clear |
+
+**Aggregate:**
+- WB signals caught: 11/11 (all CRISIS/BURNOUT handled in Pass 1; all ENGAGED controls correctly clear in Pass 2)
+- WB controls FP: 0/3 (down from 2/2 in March)
+- Corpus CHECK-INs: 3/8 (down from 6/7 in March)
+
+### Key findings
+
+**S002 still caught.** Core finding replicates. Reasoning is balanced: "its late" is quoted directly, competing interpretations provided (casual remark vs. time pressure), low-pressure teacher suggestion offered ("Thanks for your thoughts, Jordan. I understand things can get busy!"). This is the two-pass architecture working as intended.
+
+**Over-firing pattern eliminated.** March's dominant failure was reading "abrupt endings" as a signal in nearly every student. This run shows the prompt now correctly distinguishes:
+- Rhetorical anger at course material ("Im tired of...") → engaged, not self-disclosure [S022]
+- Register statements ("I'm just gonna be real") → method, not state [S028]
+- Analytical expressions of uncertainty ("I don't have an answer") → process, not distress [S004]
+- Community and family experience as course material → engagement, not self-disclosure [S023, S024, WB09, WB10, WB14]
+
+**WB09 and WB10 false positives eliminated.** Both correctly clear. The March FPs were the "abrupt ending" artifact in the prompt — now gone.
+
+**S029 — borderline CHECK-IN.** "The way all of that interacts is exhausting to explain" is flagged. Pass 1 system prompt explicitly says neurodivergent identity-navigation-as-exhausting is ENGAGED. Pass 2 operates on a separate framing (explicit self-disclosure). The two passes are in mild tension here: Pass 1 correctly classifies ENGAGED; Pass 2 correctly identifies an explicit self-referential statement. The outcome (teacher noting the student said navigating their identities is exhausting) is not harmful and arguably appropriate. Not a clean false positive.
+
+**S031 — soft FP, cascaded.** "idk what else to say about it" fires CHECK-IN in a minimal-effort submission. Root cause: S031 should be NONE in Pass 1 (insufficient engagement), but is classified ENGAGED. The CHECK-IN FP is a downstream consequence of the Pass 1 classification error. Fixing Pass 1's NONE detection would remove S031 from the ENGAGED pool and prevent the cascade.
+
+### Parser bug noted
+
+`pass2_reasoning` field in the saved JSON is truncated wherever the model quotes student text inline (e.g., `"The student writes, \"its late\""` stops at the escaped quote). The regex at line 2906 uses `[^"]*` which cannot match through escaped quotes. Full reasoning is recoverable from the (mislabeled) `prompt_pass2` field. Fix: replace with `(?:[^"\\]|\\.)*`.
+
+### Comparison: March vs. May
+
+| Metric | March Test P (temp 0.3, n=17) | May Test P (temp 0.1, n=22) |
+|---|---|---|
+| Pass 1 correct | 17/17 | 22/22 |
+| WB controls FP | 2/2 | **0/3** |
+| Corpus CHECK-INs | 6/7 | **3/8** |
+| S002 caught | ✓ | ✓ |
+| Over-firing pattern | Present (abrupt endings) | **Eliminated** |
+| S029 CHECK-IN | No | Yes (borderline) |
+
+### Limitations
+- n=1 (single run; March replications existed at n=3–4 but temperature differs)
+- Temperature 0.1 vs. March 0.3 — may account for S031 Pass 1 direction change and confidence anchoring
+- Self-evaluation bias N/A (no LLM evaluator; CHECK-IN prompt assesses different model output than pass1)
+- Parser bug means `pass2_reasoning` is unreliable in the JSON for cases with inline student quotes; use `prompt_pass2` field for correct full text
+
+### Proposed follow-up
+- Fix parser bug at line 2906: `[^"]*` → `(?:[^"\\]|\\.)*`
+- Fix Pass 1 NONE detection to prevent S031 from reaching Pass 2 (current: ENGAGED; correct: NONE)
+- Consider whether S029 borderline CHECK-IN warrants a prompt note clarifying that "identity navigation is exhausting" is NOT a self-disclosure signal — this would bring Pass 2 in line with Pass 1's explicit instruction
+

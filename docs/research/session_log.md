@@ -50,7 +50,7 @@ None.
 
 ### Test queue
 - **Test N replication (expanded corpus)**: DONE (2026-05-11). 20/22. See experiment log.
-- **Test P rerun**: BLOCKED on timeout — increase subprocess timeout to 1800s first, then rerun.
+- **Test P rerun**: DONE (2026-05-11). Major improvement — 0/3 WB control FPs (down from 2/2 March), 3/8 corpus CHECK-INs (down from 6/7). S002 caught. Over-firing eliminated. See experiment log.
 - **Test R**: DONE (2026-05-10). See experiment log.
 - **Q4 trajectory validation**: NOT YET RUN.
 - **E016 replication (P4)**: NOT YET RUN.
