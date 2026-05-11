@@ -5,7 +5,16 @@ Old content gets archived to `docs/research/logs/` when > 200 lines.
 
 ---
 
-## Current state (2026-04-13)
+## Current state (2026-05-10)
+
+### Context since last session log (2026-04-13)
+
+Between April 13 and May 10, two live-data runs completed (2026-04-27). Full findings in `docs/research/findings_from_live_data_run_2026-04-27.md` — read that doc before any Track B / wellbeing work. Key discoveries:
+
+- **Prescan-signal-prefix architecture** is the root cause of Track B's topic-adjacency false positives (§8). Prompt iteration on `WELLBEING_CLASSIFIER_SYSTEM` cannot close the gap; the prescan upstream primes the classifier before equity guards can fire.
+- **Two production gaps** identified: (1) B doesn't receive the assignment prompt, (2) B's equity-hardening is missing 5 guards present in A2. Both are production-impacting.
+- **Schema-misuse bug** staged but uncommitted in `src/research/concern_detector.py` (§1).
+- **Research pivot**: paper-relevant outputs now live in `~/Documents/GitHub/research/output-format-bias/data/raw_outputs/`, not in this repo.
 
 ### Pipeline status
 
@@ -19,85 +28,68 @@ Old content gets archived to `docs/research/logs/` when > 200 lines.
 None.
 
 ### Test queue
-Empty. All scheduled tests (P3, Q3, Test N extension) completed Apr 2. See below for what's next.
+- **Test R**: DONE (2026-05-10). See experiment log.
+- **Q4 trajectory validation**: NOT YET RUN.
+- **E016 replication (P4)**: NOT YET RUN.
+
+---
+
+## What was done (2026-05-10)
+
+### Test R — WELLBEING_CONCERN_PROMPT synthetic corpus (Gemma 12B)
+
+**Result: 4/7 raw (57%). 6/7 under production 0.7 threshold (86%).**
+
+Three failures, all perfectly consistent across 3 runs:
+
+- **S002 Jordan Kim (burnout) — missed 3/3.** Submission trails off mid-sentence ("its late and"). Model correctly applied "default to NOT flagging" — the signal is implicit, below the prompt's explicit-distress threshold. Likely a test calibration issue, not a prompt failure.
+- **S022 Destiny Williams (righteous anger) — flagged 3/3 at conf 0.4.** Model reads present-tense structural analysis of redlining as possibly describing the student's own neighborhood. Below 0.7 production threshold; would be filtered. Worked example gap in DO-NOT-flag list.
+- **S029 Jordan Espinoza (neurodivergent) — flagged 3/3 at conf 0.6.** Model explicitly identifies identity-navigation fatigue in its own reasoning ("this is likely related to identity-navigation fatigue") then flags anyway. Self-contradictory. Below 0.7 threshold; would be filtered. Prompt compliance breaks when stress language co-occurs with correctly-identified IDF.
+
+Full entry in experiment log. Proposed fixes: (1) strengthen S029-type instruction with "even when the student uses words like 'exhausting'", (2) add S022-type worked example for structural analysis with personal-geography overlap, (3) decide whether S002's implicit trailing-off burnout is in scope for A2.
+
+### Infrastructure fix
+Added `unload_mlx_model()` call to `scripts/run_wellbeing_concern_synthetic_test.py` `main()` finally-block. Metal now releases cleanly after runs whether they succeed or fail.
 
 ---
 
 ## What needs to happen next
 
-### 1. Q4 trajectory report validation — **NOT YET RUN**
+### 1. Decide on Test R prompt fixes (low cost, high value)
+Two targeted additions to `WELLBEING_CONCERN_PROMPT` based on S022 and S029 failures. Do not lower the flagging threshold. See experiment log proposed follow-up.
 
-The observation arc passthrough (`_build_observation_arc()` in trajectory_report.py) was implemented Apr 3-4 but has **not been validated by a test run**. The acid test:
-
-- Re-run trajectory reports on the existing test corpus (same as Q3)
-- Compare T006 Ingrid Johansson: does the report now surface the property tax breakthrough, "both sides" power move, and A4 partial regression?
-- Compare all 17 students against Q3 baseline (35/48). Students that passed should still pass.
+### 2. Q4 trajectory report validation — NOT YET RUN
 
 Launch: `caffeinate -i python3 scripts/run_trajectory_tests.py --model gemma12b --reset-flags`
 
-**Must `--reset-flags`** — `.trajectory_flags/` has stale phase flags from prior runs.
+Must `--reset-flags` — stale phase flags from prior runs. Compare T006 against Q3 baseline.
 
-### 2. E016 replication — **NOT YET RUN**
-
-The E016 prompt fix (relational epistemology contribution specificity) was implemented Apr 3. Needs a P4 equity trajectory run to validate.
+### 3. E016 replication (P4) — NOT YET RUN
 
 Launch: `caffeinate -i python3 scripts/run_equity_trajectory_tests.py --model gemma12b --run-id P4`
 
-### 3. Evaluator infrastructure bugs (low priority)
-
-T008 and T010 each have 2 checks that permanently fail as "Not answered by evaluator." T008 also has malformed check IDs ("1", "2" instead of descriptive names). These are in the test script, not the pipeline.
-
----
-
-## What was done (Apr 1-4 research session)
-
-### Architecture changes
-
-1. **Observation arc passthrough** (`trajectory_report.py`): `_build_observation_arc()` adds observation text to `semester_arc` with signal-aware compression. Inflection points (wellbeing change, theme shift >50%, word count delta >40%, register change) + most recent 3 assignments get full text; stable entries get first sentence only. Tested to 20 assignments at max volatility: 1803 tokens, under 3500 ceiling. Addresses T006 root cause — the report generator can now see the qualitative observations.
-
-2. **Compression bottleneck principle documented** in experiment log: "Don't compress the perception; pass it through." The same structural error as binary concern detection — forcing rich qualitative reading into categories. The observation arc fix follows the same logic as the observation layer itself.
-
-### Prompt fixes
-
-3. **E016 relational epistemology** (`prompts.py`): Observation prompt now names what relational/narrative methods uniquely reveal (emotional labor, mutual care, interpersonal trust) — same "method legitimacy → contribution specificity" pattern as E002.
-4. **Lens template concern fragments** (`lens_templates.py`): All 10 subject areas rewritten from enumerative checklists to generative frameworks. -14 net lines.
-5. **Binary concern detector** removed from `__init__.py` re-export. Deprecated in production; only `research_engine.py` uses it directly.
-
-### Infrastructure
-
-6. **Metal OOM fix**: Mid-phase batch unload (8 students/batch) + caffeinate auto-applied per subprocess.
-7. **Run isolation**: `--run-id` sets unique COURSE_ID per test run. P2's 94.6% was confounded by history bleed; P3 is the clean baseline.
-8. **Test-monitor skill**: Revised with 5-step structured verification, anti-enumeration discipline, bounded QC pass.
-
-### Test results (all logged in experiment_log.md)
-
-| Test | Result | Key finding |
-|------|--------|-------------|
-| P3 (equity observations) | 55/56 (98.2%) | E002 + E010 fixed; E016 3/4 (new gap); first clean run |
-| Q3 (trajectory reports) | 35/48 (72.9%) | T006 0/3 persistent (upstream fix needed); T002 fixed from P3 |
-| Test N extension | 4/4 | Community resilience guard generalizes across 4 cultural contexts |
-
-### Pipeline audit findings
-
-- Enumerative fragility concentrated in concern detection (deprecated in production). Observation/coding/trajectory layers are already generative.
-- Observations are ~250 tokens regardless of submission length (r=-0.03).
-- Token budget for 20-assignment courses: tiered compression fits within 12B's 8K context.
+### 4. Production gaps from live-data run (when ready)
+See `findings_from_live_data_run_2026-04-27.md` §1–4. Priority order:
+1. Port 5 equity-hardening guards from A2 into `WELLBEING_CLASSIFIER_SYSTEM`
+2. Feed assignment_prompt to `classify_wellbeing` + `classify_checkin`
+3. Tighten CHECK-IN "ONLY when genuinely balanced" instruction
 
 ---
 
-## Stable research findings (replicated, as of 2026-04-02)
+## Stable research findings (replicated, as of 2026-05-10)
 
 | Finding | Test | Stability |
 |---------|------|-----------|
-| Silence-after-disclosure: 9/9 | P + P2 + P3 | **Replicated** — 3 disclosure types, 3 consecutive clean runs |
-| ESL transfer-as-intellectual-stretch (E002) | P + P2 + **P3 FIXED** | Stable failure in P/P2; prompt fix confirmed in P3 |
+| Silence-after-disclosure: 9/9 | P + P2 + P3 | **Replicated** |
+| ESL transfer-as-intellectual-stretch (E002) | P + P2 + P3 FIXED | Prompt fix confirmed |
 | AAVE/code-switching (E001, E003) | P + P2 + P3 | Replicated |
-| Multilingual E013-E015 | P2 + P3 | 4/4 each (clean). E016 3/4 — contribution-specificity gap |
-| Disability/chronic illness (E005) | P + P2 + P3 | 4/4 in P and P3; P2 3/4 was model variability |
-| Working student (E009) | P3 clean | 5/5 under isolation |
-| E010 continuity/return framing | P + P2 + **P3 FIXED** | Prompt fix confirmed |
-| Tone policing in trajectory report (T006) | Q + Q3 | Persistent — observation arc passthrough implemented, awaiting Q4 validation |
-| Community resilience guard | Test N + ext | 4/4 cultural contexts + 2 controls |
+| Multilingual E013-E015 | P2 + P3 | 4/4 each; E016 3/4 gap |
+| Disability/chronic illness (E005) | P + P2 + P3 | Replicated |
+| Working student (E009) | P3 | Clean under isolation |
+| E010 continuity/return framing | P + P2 + P3 FIXED | Prompt fix confirmed |
+| Tone policing in trajectory report (T006) | Q + Q3 | Persistent — Q4 pending |
+| Community resilience guard | Test N + ext | 4/4 cultural contexts |
+| A2 conservative default under production threshold | Test R | 6/7 correct; 2 sub-threshold FPs, 1 implicit-burnout miss |
 
 ---
 
@@ -105,7 +97,7 @@ T008 and T010 each have 2 checks that permanently fail as "Not answered by evalu
 
 - **MLX serial constraint**: Do NOT run two MLX tasks simultaneously.
 - **Trajectory flags are stale**: Always `--reset-flags` before new trajectory runs.
-- **Uncommitted work**: 13 modified files + 21 untracked (inbox module, OpenSpec skills, live-run fixes). These are feature work, not research pipeline changes.
-- **Commit before leaving**: `git add docs/research/session_log.md docs/research/experiment_log.md src/ scripts/ && git commit -m "Research session $(date +%Y-%m-%d): [summary]"`
-- **P2 confound documented**: Test P2's 94.6% is not reliable. P3 is the clean baseline.
-- **Experiment log**: 6700+ lines. All entries verified against raw JSON. Scholarly connections added (Yosso 2005, Paris & Alim 2017, Tuck 2009, Tuck & Yang 2014, Zheng et al. 2023).
+- **Research outputs**: Paper-relevant JSONs in `~/Documents/GitHub/research/output-format-bias/data/raw_outputs/`. This repo's `data/research/raw_outputs/` holds older tests (Mar 2026, committed to git; gitignored going forward).
+- **Uncommitted work**: Schema-misuse fix staged in `src/research/concern_detector.py`. `unload_mlx_model` addition in `scripts/run_wellbeing_concern_synthetic_test.py`. Plus prior feature work (inbox module, etc.).
+- **P2 confound**: P2's 94.6% not reliable. P3 is the clean baseline.
+- **Experiment log**: ~6800+ lines. All entries verified against raw JSON.

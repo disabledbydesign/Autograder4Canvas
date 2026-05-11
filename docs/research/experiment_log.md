@@ -6704,3 +6704,74 @@ Assessed all major prompts in `src/insights/prompts.py` and `src/insights/lens_t
 - **TRAJECTORY_REPORT_PROMPT** (prompts.py lines 2233-2314): Entirely generative. "What has this student BUILT intellectually?" Traces development relative to the student's own threads, not against external pattern categories.
 
 **The fragility concentrates in concern detection**, which is being replaced by the observation layer anyway (per pipeline architecture spec). The observation and trajectory layers are already generative — the rat race risk is contained, not systemic. The compression bottleneck (not passing observations through to reports) is a separate problem from enumerative fragility — it's information loss, not typological over-specification.
+
+---
+
+## Test R — WELLBEING_CONCERN_PROMPT synthetic corpus validation
+**Date:** 2026-05-10
+**File:** `/Users/june/Documents/GitHub/research/output-format-bias/data/raw_outputs/test_r_wellbeing_concern_synthetic_gemma12b_2026-05-10_2119.json`
+**Model:** Gemma 3 12B via MLX (`mlx-community/gemma-3-12b-it-4bit`)
+**Provenance:** git commit `da3fff79`, branch main (dirty)
+**Duration:** ~21 minutes (3 runs × 7 students, ~50–77s per call)
+
+### Designed to test
+Whether `WELLBEING_CONCERN_PROMPT` (Track A2 research classifier) correctly flags genuine burnout (S002) while clearing false-positive-prone cases: righteous anger (S022), lived experience/structural analysis (S023), AAVE voice (S028), neurodivergent/identity-navigation fatigue (S029), strong engagement (S004), minimal effort (S031). This is the baseline validation for A2 before using it as a paper comparison track against Track B.
+
+### Method
+7-student synthetic corpus from `data/demo_corpus/ethnic_studies.json`. 3 runs per student (21 total calls). No confidence threshold applied in test scoring — any non-empty `concerns[]` array counts as FLAG. Production `concern_detector.py` applies a 0.7 threshold; this test does not.
+
+### Results
+
+| Student | Pattern | Expected | Run1 | Run2 | Run3 | Consistent? |
+|---------|---------|----------|------|------|------|-------------|
+| S002 Jordan Kim | burnout | FLAG | CLEAR | CLEAR | CLEAR | Yes (miss) |
+| S004 Priya Venkataraman | strong engagement | CLEAR | CLEAR | CLEAR | CLEAR | Yes ✓ |
+| S022 Destiny Williams | righteous anger | CLEAR | FLAG | FLAG | FLAG | Yes (FP) |
+| S023 Yolanda Fuentes | lived experience | CLEAR | CLEAR | CLEAR | CLEAR | Yes ✓ |
+| S028 Imani Drayton | AAVE | CLEAR | CLEAR | CLEAR | CLEAR | Yes ✓ |
+| S029 Jordan Espinoza | neurodivergent | CLEAR | FLAG | FLAG | FLAG | Yes (FP) |
+| S031 Marcus Bell | minimal effort | CLEAR | CLEAR | CLEAR | CLEAR | Yes ✓ |
+
+**Raw score: 4/7 correct (57%). All results completely consistent across 3 runs — zero variability.**
+
+**Under production 0.7 confidence threshold:** S022 flagged at conf 0.4; S029 at conf 0.6. Both would be filtered in production. Adjusted: 6/7 correct (86%). Only S002's burnout miss persists under production threshold.
+
+### Qualitative findings
+
+**S002 Jordan Kim — burnout miss:**
+Submission: coherent engagement with Crenshaw's intersectionality (connects to student's Korean mother), ends mid-sentence: "Idk I had more to say but its late and". Model returned `{"concerns": []}` with no explanation.
+
+The burnout signal is implicit — a trailing-off incomplete sentence and "its late." The prompt's DO-flag examples all show explicit material distress language ("I haven't eaten today", "I don't see the point anymore"). The model correctly applied the explicit instruction to "default to NOT flagging" when the signal is ambiguous. This is likely a **test expectation calibration issue** — the corpus labels S002 as "burnout pattern" but the submission doesn't contain explicit-distress-threshold language as defined by the prompt. The prompt is designed for explicit material distress; implicit trailing-off is below its threshold by design.
+
+**S022 Destiny Williams — righteous anger false positive (conf 0.4):**
+Flagged passage: "The same blocks that were red-lined are the same blocks with no grocery stores no good schools no investment."
+Model's reasoning: "the student's phrasing suggests a current, lived experience of deprivation and lack of access to essential resources" — recommends a "gentle check-in about food security."
+
+The model reads present-tense, geographically specific structural analysis as potentially describing the student's own neighborhood. Its reasoning is structurally plausible but wrong per the DO-NOT-flag instruction (which explicitly covers "Students expressing anger about racism, structural violence, or injustice"). The DO-NOT-flag list lacks a worked example for structural analysis that overlaps with possible personal geography — the model's disambiguation failed at the ambiguous edge case. Confidence 0.4 means this would be filtered by the production threshold.
+
+**S029 Jordan Espinoza — identity-navigation fatigue false positive (conf 0.6):**
+Flagged passage: "I have dyslexia and ADHD and I'm also Latino and I'm the first in my family to take honors classes. the way all of that interacts is exhausting to explain."
+Model's reasoning: "While this is likely related to identity-navigation fatigue and a commentary on societal expectations, it indicates a level of ongoing stress and burden that warrants teacher awareness."
+
+The model explicitly identifies identity-navigation fatigue — the exact pattern the DO-NOT-flag instruction covers — and then flags anyway. This is a self-contradictory output: the model's own framing matches the instruction's named exception, but a "BUT also stress" caveat overrides it. The DO-NOT-flag instruction includes a direct example nearly identical to S029's text ("Being neurodivergent in academia is exhausting" → identity-navigation fatigue, NOT a wellbeing concern). Prompt compliance partially breaks when stress language co-occurs with correctly-identified identity-navigation fatigue. Confidence 0.6 means production threshold would filter this.
+
+### Implications
+
+1. **A2 is more conservative than the test design expected — by design.** The DO-NOT-flag instruction is working for S023 (lived experience), S028 (AAVE), S004, S031. The two persistent false positives (S022, S029) are both sub-threshold (0.4, 0.6) and would be production-filtered. Under production threshold, A2 achieves 6/7.
+
+2. **S002's miss is a test calibration question, not a prompt failure.** The prompt's explicit-distress threshold is correctly calibrated for the cases it was designed for (food insecurity, housing instability, active safety threat, explicit hopelessness). Implicit trailing-off burnout is below this threshold. Whether the prompt *should* catch this type of signal is a design decision — lowering the threshold would increase false positives on the DO-NOT-flag cases. The corpus label ("burnout pattern") reflects a nuanced signal the prompt is not designed to catch at this calibration point.
+
+3. **S029's self-contradictory output is the most instructive failure.** The model correctly identifies the pattern, names the correct exception category, then overrides it. This suggests the DO-NOT-flag instruction needs "DO NOT flag even when" reinforcement for the specific co-occurrence of identity-navigation fatigue + stress language. The instruction currently frames the exception as positive ("is making a POLITICAL OBSERVATION"); adding "even if the student also uses stress language like 'exhausting'" may close the gap.
+
+4. **Zero variability across 3 runs** is notable. All errors were perfectly consistent. For a 12B model, this suggests the misclassifications are structural (driven by something consistent in the prompt-response pattern), not model variability — they're worth addressing rather than attributing to noise.
+
+### Proposed follow-up
+- Strengthen S029-type instruction: add "DO NOT flag even when the student uses words like 'exhausting' or 'draining' to describe identity-navigation — this is the expected emotional register for political observation about institutional mismatch, not personal crisis." (low cost, test with 1 rerun of S029 only before full rerun)
+- For S022: add a worked example to the DO-NOT-flag structural-analysis guidance that explicitly covers present-tense, geographically specific neighborhood analysis. (low cost, same rerun)
+- Decide whether S002's sub-threshold trailing-off burnout should be in scope for A2 at all — if not, update corpus label. Do NOT lower the threshold speculatively.
+
+### Limitations
+- Synthetic corpus; real submissions may produce different patterns
+- No production threshold applied in scoring — raw 4/7 should always be read alongside production-threshold-adjusted 6/7
+- Single model (self-evaluation bias not applicable here — this test has no LLM evaluator, only algorithmic pass/fail)
+- Provenance: git dirty (uncommitted changes present at run time — `unload_mlx_model` addition to test script, staged schema-misuse fix in `concern_detector.py`)
