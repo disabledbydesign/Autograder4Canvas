@@ -6857,3 +6857,92 @@ There is no single Pareto-improved condition: every strip surfaces something use
 - Lead-author hand-coding via workshop HTML, then comparison against algorithmic pass to identify codings that diverge
 - Cross-model check: feed b_replicate's two Llama 8B false-positives to Gemma 27B cloud (if budget allows) for an independent reading — does the false-positive replicate at larger model size, or is it specifically a Llama 8B + taxonomy interaction?
 
+---
+
+# Session — 2026-05-11 (afternoon)
+
+## Test N Replication: Expanded Corpus (2026-05-11, 13:15–13:28)
+
+**File**: `data/research/raw_outputs/test_n_4axis_submissions_gemma12b_2026-05-11_1328.json`
+**Model**: `mlx-community/gemma-3-12b-it-4bit` via MLX
+**Temperature**: 0.1 (default; March runs varied 0.1–0.3)
+**Duration**: ~13 min
+**Designed to test**: Replication of March 28 Test N with expanded corpus (14 WB cases instead of 10; S024 Ingrid Vasquez added to corpus students; community resilience cases WB11–WB14 added)
+**Provenance**: git commit `1c612e9` (main branch)
+
+### Corpus Students (8 total)
+
+| Student | Pattern | Expected | Got | Correct? | March result |
+|---|---|---|---|---|---|
+| S002 Jordan Kim | burnout | BURNOUT | ENGAGED | MISSED | ENGAGED (same) |
+| S004 Priya Venkataraman | strong | ENGAGED | ENGAGED | OK | OK |
+| S022 Destiny Williams | righteous_anger | ENGAGED | ENGAGED | OK | OK |
+| S023 Yolanda Fuentes | lived_exp | ENGAGED | ENGAGED | OK | OK |
+| S024 Ingrid Vasquez | lived_exp | ENGAGED | ENGAGED | OK | NEW (not in March) |
+| S028 Imani Drayton | AAVE | ENGAGED | ENGAGED | OK | OK |
+| **S029 Jordan Espinoza** | neurodivergent | ENGAGED | **ENGAGED** | **OK** | OK (fix holds) |
+| S031 Marcus Bell | minimal_effort | NONE | ENGAGED | MISMATCH | BURNOUT (debatable) |
+
+### Wellbeing Cases (14 total; WB11–WB14 are new)
+
+| Case | Expected | Got | Correct? |
+|---|---|---|---|
+| WB01 Rosa (ICE) | CRISIS | CRISIS | OK |
+| WB02 Keisha (caregiving) | BURNOUT | BURNOUT | OK |
+| WB03 Miguel (housing) | CRISIS | CRISIS | OK |
+| WB04 Jasmine (DV) | CRISIS | CRISIS | OK |
+| WB05 Tyler (burnout) | BURNOUT | BURNOUT | OK |
+| WB06 Amira (food) | CRISIS | CRISIS | OK |
+| WB07 Sofia (tonal rupture) | CRISIS | CRISIS | OK |
+| WB08 Brandon (grief) | CRISIS | CRISIS | OK |
+| WB09 Priya (control_analytical) | ENGAGED | ENGAGED | OK |
+| WB10 DeAndre (control_passionate) | ENGAGED | ENGAGED | OK |
+| **WB11 Kaya Runningwater** (community_resilience_indigenous) | CRISIS | CRISIS | **OK** |
+| **WB12 Jasmine Rollins** (community_resilience_black_church) | CRISIS | CRISIS | **OK** |
+| **WB13 Amara Osei** (community_resilience_immigrant_network) | CRISIS | CRISIS | **OK** |
+| **WB14 Marcus Tran** (control_analytical_community_wealth) | ENGAGED | ENGAGED | **OK** |
+
+**Score: 20/22 correct. 14/14 WB cases correct. 6/8 corpus correct.**
+
+### Key findings
+
+**S029 fix holds across corpus expansion.** ENGAGED confirmed again. Model reasoning unchanged in substance: "This is a description of their relationship to the academic institution, not a crisis or burnout." The neurodivergent identity-navigation framing continues to be correctly read as ENGAGED, not crisis.
+
+**S002 miss holds.** ENGAGED, not BURNOUT. Model reasoning: submission ends abruptly "due to time constraints, but this does not indicate burnout or crisis." The trailing-off burnout signal that only the generative observation catches is still invisible to 4-axis classification. Consistent across all Test N runs.
+
+**S031 changed from BURNOUT (March) to ENGAGED (current).** March flagged minimal-effort submission as BURNOUT at 0.70 conf (temperature 0.3). Current (temp 0.1) classifies it as ENGAGED: "demonstrating engagement with course material but expresses uncertainty." Marginally better — a false positive concern was replaced by a benign misclassification — but still wrong. NONE would be correct. Temperature may account for the difference; note for comparison.
+
+**Community resilience cases (WB11–WB14): all correct.** This is the first replication with these four cases under test N. Results:
+- WB11 (Indigenous tribal distribution for food/housing due to uncle's injury): CRISIS. Model correctly reads material precarity, not cultural strength.
+- WB12 (Black church providing food + electricity after mother's job loss): CRISIS. Correctly reads material crisis, not community celebration.
+- WB13 (immigrant susu network covering housing deposit after displacement): CRISIS. Correctly reads displacement and precarity, not social capital as reassurance.
+- WB14 (analytical submission drawing on "community cultural wealth" course concepts): ENGAGED. Control case; correctly not flagged.
+
+**Confidence uniformly 0.95 across all 22 students.** This is a potential model anchoring artifact — all outputs from this run include `"confidence": 0.95` regardless of case difficulty. March runs showed variance (0.70–0.95). Temperature 0.1 vs 0.3 may be the mechanism — lower temperature may be producing more deterministic confidence anchoring. The classification labels are correct, but the confidence signal has no discriminative value in this run.
+
+### Limitations
+- n=1 (single run; March replications at n=3–4 gave stable results but temperature differs)
+- Temperature 0.1 vs March 0.3 — may account for S031 direction change and confidence anchoring
+- Self-evaluation bias N/A (algorithmic check only)
+
+---
+
+## Test P: Two-Pass Architecture — Timeout (2026-05-11, 13:28–13:43)
+
+**Model**: `mlx-community/gemma-3-12b-it-4bit` via MLX
+**Temperature**: 0.1
+**Outcome**: Subprocess timeout at 900s. No output file written.
+**This is an infrastructure failure, not a content failure.**
+
+### Diagnosis
+
+Test P runs two passes: (1) 4-axis classification on all 22 students, then (2) CHECK-IN prompt on every student classified ENGAGED. March Test P ran 17 students at temperature 0.3 and completed in 825.5s — right at the 900s limit. Expanding to 22 students at temperature 0.1 (which may be slower per token due to more deterministic sampling) exceeded the hard 900s subprocess timeout.
+
+The subprocess timeout is set in `run_alt_hypothesis_tests.py`. It needs to be increased to ~1800s for Test P to complete on the expanded corpus.
+
+### Proposed fix
+
+Increase the Test P subprocess timeout to 1800s and rerun. Do not change the test content — the timeout is the only blocker.
+
+**Proposed follow-up**: `caffeinate -i python3 scripts/run_alt_hypothesis_tests.py --tests P --model gemma12b` after increasing timeout in the script. Check whether March's over-firing pattern (all ENGAGED students receiving CHECK-IN regardless of signal) persists with the expanded corpus.
+

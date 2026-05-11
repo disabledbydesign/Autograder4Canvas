@@ -5,7 +5,15 @@ Old content gets archived to `docs/research/logs/` when > 200 lines.
 
 ---
 
-## Current state (2026-05-11)
+## Current state (2026-05-11, updated afternoon)
+
+### Test N + P run (2026-05-11 afternoon)
+
+**Test N** (4-axis classification on submissions, expanded corpus): **20/22 correct**. S029 fix holds. S002 miss holds. All 14 WB cases correct including new community resilience cases (WB11–WB14). S031 changed from BURNOUT (March, temp 0.3) to ENGAGED (today, temp 0.1) — benign misclassification either way. Confidence uniformly 0.95 — temperature anchoring artifact, no discriminative value this run. Full entry in experiment log.
+
+**Test P** (two-pass architecture): **Timed out at 900s.** Infrastructure failure only — corpus expanded from 17→22 students, which pushes past the subprocess timeout. Fix: increase timeout to 1800s in `run_alt_hypothesis_tests.py` and rerun.
+
+Output: `data/research/raw_outputs/test_n_4axis_submissions_gemma12b_2026-05-11_1328.json`
 
 ### Variant A stripped-observation run (output-format-bias paper)
 
@@ -41,6 +49,8 @@ Between April 13 and May 10, two live-data runs completed (2026-04-27). Full fin
 None.
 
 ### Test queue
+- **Test N replication (expanded corpus)**: DONE (2026-05-11). 20/22. See experiment log.
+- **Test P rerun**: BLOCKED on timeout — increase subprocess timeout to 1800s first, then rerun.
 - **Test R**: DONE (2026-05-10). See experiment log.
 - **Q4 trajectory validation**: NOT YET RUN.
 - **E016 replication (P4)**: NOT YET RUN.
