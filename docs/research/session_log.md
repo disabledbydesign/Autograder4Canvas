@@ -7,15 +7,19 @@ Old content gets archived to `docs/research/logs/` when > 200 lines.
 
 ## Current state (2026-05-12, updated ~2:15PM)
 
-### Genob a2_no_context n=1 — RUNNING
-`caffeinate -id python3 run_genob_full_corpus_test.py --condition a2_no_context --n-runs 1`
-Started ~2:14 PM. Part of test chain launched after genob pass 1 killed.
+### Genob a2 resume (passes 2–5) — RUNNING (~3:02 PM)
+`caffeinate -id python3 run_genob_full_corpus_test.py --resume-from test_variant_a2_FULL_CORPUS_observation_2026-05-12_1057.partial.json --n-runs 5`
+Resuming from pass 1 checkpoint. Will write passes 2–5 into the same output file. ETA: ~6 hours (evening).
 
-**Genob a2 partial**: `test_variant_a2_FULL_CORPUS_observation_2026-05-12_1057.partial.json` (passes_complete=1, 46 results)
-**Remaining queue after a2_no_context n=1 completes**:
-1. `--resume-from` a2 partial, n=4 (runs 2–5 for a2 condition, same file)
-2. a2_no_context n=4 resume (if partial written after this n=1 run)
-3. 4-axis (next chained test — check what was in the original launch chain)
+**Both partials confirmed:**
+- a2: `test_variant_a2_FULL_CORPUS_observation_2026-05-12_1057.partial.json` (passes_complete=1, RESUMING)
+- a2_no_context: `test_variant_a2_no_context_FULL_CORPUS_observation_2026-05-12_1414.partial.json` (passes_complete=1, ready for n=4 resume)
+
+**Genob a2_no_context n=1 DONE** (3:02 PM): `test_variant_a2_no_context_FULL_CORPUS_observation_2026-05-12_1414.json`
+Observations: WB04/WB08/WB11 all read with personal/material dimension without class context. S020 read as intellectual engagement. Qualitative comparison with a2 condition pending.
+
+**Queue after a2 resume finishes:**
+1. `--resume-from` a2_no_context partial, `--n-runs 5` (passes 2–5 no-context)
 
 ---
 
