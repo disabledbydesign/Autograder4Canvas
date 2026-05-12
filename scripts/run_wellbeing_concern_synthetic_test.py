@@ -70,6 +70,7 @@ TEST_CASES = [
     ("S004", "strong", "CLEAR"),
     ("S022", "righteous_anger", "CLEAR"),
     ("S023", "lived_exp", "CLEAR"),
+    ("S024", "lived_exp", "CLEAR"),
     ("S028", "AAVE", "CLEAR"),
     ("S029", "neurodivergent", "CLEAR"),
     ("S031", "minimal_effort", "CLEAR"),
@@ -288,7 +289,7 @@ def run_test(model_key: str = "gemma12b", n_runs: int = 3) -> Path:
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     try:
-        run_test(model_key="gemma12b", n_runs=3)
+        run_test(model_key="gemma12b", n_runs=10)
     except KeyboardInterrupt:
         print("\nInterrupted.")
         return 1

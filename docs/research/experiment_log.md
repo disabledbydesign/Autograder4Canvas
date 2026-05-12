@@ -6788,6 +6788,65 @@ The model explicitly identifies identity-navigation fatigue — the exact patter
 
 ---
 
+## Test R2 — WELLBEING_CONCERN_PROMPT expanded corpus (8 students, 5 runs)
+**Date:** 2026-05-11
+**File:** `/Users/june/Documents/GitHub/research/output-format-bias/data/raw_outputs/test_r_wellbeing_concern_synthetic_gemma12b_2026-05-11_1636.json`
+**Model:** Gemma 3 12B via MLX (`mlx-community/gemma-3-12b-it-4bit`)
+**Duration:** ~68 minutes (5 runs × 8 students, ~32–87s per call)
+
+### Designed to test
+Replication of Test R with two changes: (1) added S024 Ingrid Vasquez (lived experience / family narrative pattern) to bring the test set to 8 students, matching the Variant A workshop corpus; (2) increased to 5 runs per student for higher n before further prompt iteration. Prompt unchanged from Test R (`WELLBEING_CONCERN_PROMPT` in `src/research/prompts.py`, last modified 2026-04-27).
+
+### Results
+
+| Student | Pattern | Expected | Result | Consistent? | Conf |
+|---------|---------|----------|--------|-------------|------|
+| S002 Jordan Kim | burnout | FLAG | CLEAR 5/5 | Yes (miss) | — |
+| S004 Priya Venkataraman | strong engagement | CLEAR | CLEAR 5/5 | Yes ✓ | — |
+| S022 Destiny Williams | righteous anger | CLEAR | FLAG 5/5 | Yes (FP) | 0.4 |
+| S023 Yolanda Fuentes | lived experience | CLEAR | CLEAR 5/5 | Yes ✓ | — |
+| S024 Ingrid Vasquez | lived exp / family narrative | CLEAR | FLAG 5/5 | Yes (FP) **NEW** | 0.4 |
+| S028 Imani Drayton | AAVE | CLEAR | CLEAR 5/5 | Yes ✓ | — |
+| S029 Jordan Espinoza | neurodivergent | CLEAR | FLAG 5/5 | Yes (FP) | 0.6 |
+| S031 Marcus Bell | minimal effort | CLEAR | CLEAR 5/5 | Yes ✓ | — |
+
+**Raw score: 4/8 (50%). All results perfectly consistent across 5 runs — zero variability.**
+
+**Under production 0.7 threshold:** S022 (0.4), S024 (0.4), S029 (0.6) all filtered. Adjusted: **7/8 (87.5%)**. Only S002's burnout miss persists.
+
+Test R results replicate exactly on all 7 original students. S024 is a new failure.
+
+### Qualitative findings
+
+**S024 Ingrid Vasquez — third-party narrative projection false positive (conf 0.4, deterministic):**
+
+Ingrid's submission describes her mother's experience as an undocumented immigrant worker: "She was there to produce and if she got sick that was her problem." Surrounding context: "It was that she was a woman and pregnant and an immigrant and undocumented and didn't speak the language — and each of those things meant the people who could have helped her felt like they didn't have to."
+
+The model's `why_flagged` is identical across all 5 runs (fully deterministic at temp 0.1):
+
+> "This passage reveals a sense of powerlessness and lack of support experienced by the student's mother, highlighting a situation where her wellbeing was disregarded. While discussing her mother's experience, the student's phrasing suggests a deep understanding of systemic devaluation and a lack of agency, which could be a reflection of broader anxieties or concerns about vulnerability and exploitation."
+
+The model knows the passage is about the mother (says so explicitly), then projects from "discussing her mother's experience" to "could be a reflection of broader anxieties." The DO-NOT-flag list covers students "engaging with course concepts analytically" and "writing about systemic injustice," but does not explicitly address the case of a student narrating a family member's difficult experience. The model's disambiguation fails at the unmarked edge case of intergenerational narrative. Confidence 0.4 → filtered in production.
+
+**Cross-test note:** S024 Ingrid appeared in the Variant A workshop corpus. In the b_replicate condition, Llama 8B falsely accused her of *not* engaging structural power dynamics in the same submission (she is explicitly engaging structural power throughout). Two different failure modes on the same submission: Llama 8B misreads her structural analysis as insufficient; WELLBEING_CONCERN_PROMPT misreads her family narrative as personal disclosure. Both filtered in production; both reflect the same upstream challenge — the model's difficulty holding "student discussing difficult material about someone else" as a distinct interpretive frame from "student disclosing their own situation."
+
+### Implications
+
+1. **A2 holds at 87.5% under production threshold** (7/8). The S024 FP is a new named failure mode but is production-filtered.
+2. **Third-party narrative projection is a distinct failure mode** from the two Test R failures. S022's failure is structural-analysis-to-personal-geography confusion; S029's is identity-nav-fatigue compliance break; S024's is intergenerational narrative projection. Three failure modes, all sub-threshold, all deterministic.
+3. **S024's consistent flagging across 5 runs at identical confidence and identical reasoning** confirms this is structural — the prompt has no instruction covering students narrating a family member's experience. Not variability.
+
+### Proposed follow-up
+- Add a worked example to the DO-NOT-flag list covering family/intergenerational narrative: "Student describing a parent's or family member's labor exploitation, illness, or hardship — even in emotionally vivid terms — is engaging course content, not disclosing a personal wellbeing concern." (Low cost; would directly address S024.)
+- Continue n=10 replication in progress (5 more runs queued).
+
+### Limitations
+- Synthetic corpus
+- No production threshold applied in raw score — always read alongside 87.5% adjusted
+- Zero variability across 5 runs at temp 0.1; findings are deterministic at this temperature
+
+---
+
 ## 2026-05-11 — Variant A stripped-observation test (output-format-bias paper)
 
 **File**: `~/Documents/GitHub/research/output-format-bias/data/raw_outputs/test_variant_{b_replicate,a1,a2,a2_no_context}_observation_2026-05-11.json`

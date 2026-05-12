@@ -5,7 +5,31 @@ Old content gets archived to `docs/research/logs/` when > 200 lines.
 
 ---
 
-## Current state (2026-05-11, updated afternoon)
+## Current state (2026-05-11, updated evening)
+
+### ACTIVE BACKGROUND RUN — full corpus wellbeing test
+
+**Process**: `caffeinate -id python3 scripts/run_wellbeing_concern_full_corpus_test.py`
+**Started**: ~18:20 2026-05-11. Estimated ~4–5 hours (not 10.5h — script header estimate is too conservative based on Test R2 timing data).
+**Output will land at**: `~/Documents/GitHub/research/output-format-bias/data/raw_outputs/test_r_wellbeing_concern_FULL_CORPUS_gemma12b_2026-05-11_<time>.json`
+**Loop structure**: runs-outer, students-inner (all 46 per pass × 5 passes).
+**To check progress**: `tail -50 /private/tmp/claude-501/.../<task-output-file>` — or just grep the output dir when done.
+
+**After this completes, queue in order (MLX serial)**:
+1. `caffeinate -id python3 scripts/run_4axis_full_corpus_test.py --variant both`
+2. `caffeinate -id python3 ~/Documents/GitHub/research/output-format-bias/scripts/run_genob_full_corpus_test.py`
+
+All three scripts smoke-tested and passing (2026-05-11 evening). All use the same 32 ES + 14 WB = 46-student corpus.
+
+**Infrastructure fix applied**: `caffeinate -id` (was `-i` — display sleep was causing Metal stall on long unattended runs). Metal warmup added to `run_wellbeing_concern_full_corpus_test.py` `main()`. Same fix should be applied to `run_4axis_full_corpus_test.py` and `run_genob_full_corpus_test.py` before their runs.
+
+### Test R2 — WELLBEING_CONCERN_PROMPT expanded corpus (2026-05-11 evening)
+
+8 students × 5 runs. Raw: **4/8 (50%)**. Under production 0.7 threshold: **7/8 (87.5%)**. Full entry in experiment log under "Test R2."
+
+Key new finding: **S024 Ingrid Vasquez — third-party narrative projection FP** (5/5, conf=0.4, deterministic). Model reads student's account of her immigrant mother's labor exploitation as a possible reflection of the student's own wellbeing. Correctly identifies the subject is the mother, then projects anyway. Sub-threshold in production. Distinct failure mode from S022 (structural-geography confusion) and S029 (identity-nav fatigue compliance break). Cross-test note: same submission showed Llama 8B false-accusation in Variant A (accused Ingrid of not engaging structural power while she explicitly was).
+
+Proposed fix: add worked example to DO-NOT-flag list for family/intergenerational narrative.
 
 ### Test N + P run (2026-05-11 afternoon)
 
@@ -46,12 +70,16 @@ Between April 13 and May 10, two live-data runs completed (2026-04-27). Full fin
 | d3e2011c | 90005 (Biology fresh re-run) | **DONE** | Full pipeline re-run. |
 
 ### Active background tasks
-None.
+- **Full corpus wellbeing test** — RUNNING. See top of this log for details.
 
 ### Test queue
 - **Test N replication (expanded corpus)**: DONE (2026-05-11). 20/22. See experiment log.
-- **Test P rerun**: DONE (2026-05-11). Major improvement — 0/3 WB control FPs (down from 2/2 March), 3/8 corpus CHECK-INs (down from 6/7). S002 caught. Over-firing eliminated. See experiment log.
+- **Test P rerun**: DONE (2026-05-11). Major improvement. See experiment log.
 - **Test R**: DONE (2026-05-10). See experiment log.
+- **Test R2**: DONE (2026-05-11). 4/8 raw, 7/8 under threshold. S024 new FP. See experiment log.
+- **Full corpus wellbeing (Test R full)**: RUNNING (2026-05-11 evening).
+- **4-axis full corpus**: NOT YET RUN — queue after wellbeing completes.
+- **Genob full corpus**: NOT YET RUN — queue after 4-axis completes.
 - **Q4 trajectory validation**: NOT YET RUN.
 - **E016 replication (P4)**: NOT YET RUN.
 
