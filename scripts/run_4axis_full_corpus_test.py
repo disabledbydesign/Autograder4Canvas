@@ -88,6 +88,10 @@ sys.path.insert(0, str(ROOT / "scripts"))
 # Backend + production two-pass entry point.
 from insights.llm_backend import BackendConfig, send_text, unload_mlx_model  # noqa: E402
 from insights.submission_coder import classify_wellbeing  # noqa: E402
+from insights.prompts import (  # noqa: E402
+    WELLBEING_CLASSIFIER_SYSTEM,
+    WELLBEING_CLASSIFIER_PROMPT,
+)
 
 # Single-pass entry point — import the Test N inline prompts verbatim from
 # run_alt_hypothesis_tests.py so the comparison is grounded in identical text.
@@ -141,10 +145,13 @@ FOUR_AXIS_REASONING_SYSTEM = (
     "instability — domestic violence, housing loss, food insecurity, immigration "
     "enforcement threat, recent loss/grief. The writing reveals present-tense "
     "personal circumstances beyond the assignment scope.\n"
-    "- BURNOUT: The student is depleted — exhaustion, overwork, caregiving burden, "
-    "sleep deprivation. They're functioning but running on empty. The key signal "
-    "is that the student's MATERIAL CONDITIONS (work schedule, sleep loss, "
-    "caregiving duties) are breaking through and limiting their capacity. "
+    "- BURNOUT: The student's OWN capacity is depleted — exhaustion, overwork, "
+    "caregiving burden, sleep deprivation. They're functioning but running on "
+    "empty. The key signal is that the student's OWN MATERIAL CONDITIONS "
+    "(their work schedule, their sleep loss, their caregiving duties) are "
+    "breaking through and limiting their capacity. A student describing a "
+    "family member's exhaustion or a parent's overwork is NOT evidence of "
+    "BURNOUT — the depletion must be the student's own. "
     "Emotional intensity or personal vulnerability in the writing is NOT "
     "burnout — a student who writes passionately about painful experiences "
     "and reflects on the process ('this is what I needed to write') is deeply "
@@ -179,13 +186,53 @@ FOUR_AXIS_REASONING_SYSTEM = (
     "community experience analytically — a grandmother's migration, a father's "
     "labor — are doing the assignment. Classify as ENGAGED unless the student's "
     "OWN present-tense material conditions are also breaking through.\n\n"
-    "Respond with JSON only: {\"axis\": \"CRISIS\"|\"BURNOUT\"|\"ENGAGED\"|\"NONE\", "
-    "\"reasoning\": \"2-3 sentence explanation of your classification\", "
+    "Respond with JSON only: {\"reasoning\": \"2-3 sentences working through "
+    "the evidence — explicitly note if the signal is implicit, third-party, "
+    "or could be course material vs. personal disclosure\", "
+    "\"axis\": \"CRISIS\"|\"BURNOUT\"|\"ENGAGED\"|\"NONE\", "
     "\"signal\": \"brief description of key signal or lack thereof\", "
-    "\"confidence\": 0.0-1.0}"
+    "\"confidence\": 0.0-1.0 — use 0.9+ only when the evidence is direct "
+    "and unambiguous; 0.65-0.85 when signal is implicit or could be read "
+    "either way; 0.5-0.65 when two categories are plausibly correct}"
 )
 
-VARIANT_CHOICES = ("single-pass", "two-pass", "both", "reasoning", "reasoning-two-pass")
+# Binary reasoning system: WELLBEING_CLASSIFIER_SYSTEM verbatim, only the output
+# schema changed to put reasoning before axis and bump max_tokens to 400.
+# Minimal change for paper comparability — isolates the effect of reasoning
+# from guardrail language differences between the binary and 4-axis prompts.
+_BINARY_OLD_SCHEMA = (
+    'Respond with JSON only: {"axis": "CRISIS"|"BURNOUT"|"ENGAGED"|"NONE", '
+    '"signal": "brief description", "confidence": 0.0-1.0}'
+)
+assert _BINARY_OLD_SCHEMA in WELLBEING_CLASSIFIER_SYSTEM, (
+    "WELLBEING_CLASSIFIER_SYSTEM schema changed — update BINARY_REASONING_SYSTEM"
+)
+BINARY_REASONING_SYSTEM = WELLBEING_CLASSIFIER_SYSTEM.replace(
+    _BINARY_OLD_SCHEMA,
+    'Respond with JSON only: {"reasoning": "2-3 sentences working through '
+    'the evidence before committing to a classification", '
+    '"axis": "CRISIS"|"BURNOUT"|"ENGAGED"|"NONE", '
+    '"signal": "brief description of key signal or lack thereof", '
+    '"confidence": 0.0-1.0}',
+)
+
+# Binary classifier with tiebreaker removed — isolates the tiebreaker’s effect.
+# Same WELLBEING_CLASSIFIER_SYSTEM, same schema (no reasoning), tiebreaker
+# paragraph stripped. Designed to distinguish: is the equity suppression of
+# WB04/WB08/WB11 caused by the tiebreaker instruction, or by the equity guards
+# and confidence calibration independently of the tiebreaker?
+_TIEBREAKER_START = "DEFAULT TO NOT FLAGGING WHEN AMBIGUOUS"
+_tiebreaker_idx = WELLBEING_CLASSIFIER_SYSTEM.find(_TIEBREAKER_START)
+assert _tiebreaker_idx != -1, (
+    "WELLBEING_CLASSIFIER_SYSTEM tiebreaker not found — update _TIEBREAKER_START"
+)
+_tiebreaker_end = WELLBEING_CLASSIFIER_SYSTEM.find("\n\n", _tiebreaker_idx) + 2
+BINARY_NO_TIEBREAKER_SYSTEM = (
+    WELLBEING_CLASSIFIER_SYSTEM[:_tiebreaker_idx]
+    + WELLBEING_CLASSIFIER_SYSTEM[_tiebreaker_end:]
+)
+
+VARIANT_CHOICES = ("single-pass", "two-pass", "both", "reasoning", "reasoning-two-pass", "binary-reasoning", "binary-no-tiebreaker")
 
 log = logging.getLogger("run_4axis_full_corpus_test")
 
@@ -348,6 +395,53 @@ def save_results(
             "_prescan_for_personal_signals (pass 0) + "
             "run_4axis_full_corpus_test.FOUR_AXIS_REASONING_SYSTEM via "
             "insights.llm_backend.send_text (pass 1; max_tokens=400)"
+        )
+    elif variant == "binary-reasoning":
+        filename = (
+            f"test_binary_REASONING_FULL_CORPUS_{model_key}_"
+            f"{date}_{time_tag}{suffix}.json"
+        )
+        test_name = "test_binary_reasoning_full_corpus"
+        description = (
+            "Full-corpus binary wellbeing classification with REASONING field. "
+            "WELLBEING_CLASSIFIER_SYSTEM verbatim — only the output schema is "
+            "changed: 'reasoning' field added before 'axis', max_tokens=400. "
+            "Uses WELLBEING_CLASSIFIER_PROMPT (same as production binary). "
+            "Designed for paper comparability: isolates the effect of giving "
+            "the model reasoning space from the effect of different guardrail "
+            "language in FOUR_AXIS_REASONING_SYSTEM. Key question: do WB04/"
+            "WB08/WB11 (Jasmine Torres, Brandon Mitchell, Kaya Runningwater) "
+            "still score 0.6/CLEAR when the model can reason through the case "
+            "first, or does reasoning space allow the model to override the "
+            "equity-guard confidence suppression?"
+        )
+        classifier_entry_point = (
+            "run_4axis_full_corpus_test.BINARY_REASONING_SYSTEM + "
+            "insights.prompts.WELLBEING_CLASSIFIER_PROMPT via "
+            "insights.llm_backend.send_text (single-pass; no prescan; max_tokens=400)"
+        )
+    elif variant == "binary-no-tiebreaker":
+        filename = (
+            f"test_binary_NO_TIEBREAKER_FULL_CORPUS_{model_key}_"
+            f"{date}_{time_tag}{suffix}.json"
+        )
+        test_name = "test_binary_no_tiebreaker_full_corpus"
+        description = (
+            "Full-corpus binary wellbeing classification with tiebreaker paragraph "
+            "removed. WELLBEING_CLASSIFIER_SYSTEM with 'DEFAULT TO NOT FLAGGING "
+            "WHEN AMBIGUOUS' paragraph stripped — same schema as Test R (no "
+            "reasoning field), max_tokens=400. Uses WELLBEING_CLASSIFIER_PROMPT. "
+            "Designed to isolate the tiebreaker's role: does removing the "
+            "tiebreaker alone (without adding reasoning space) reverse the "
+            "equity suppression of WB04/WB08/WB11? If yes, tiebreaker is the "
+            "mechanism. If no, the equity guards + confidence calibration suppress "
+            "independently, and reasoning space (not tiebreaker removal) is what "
+            "drives the binary-reasoning reversal."
+        )
+        classifier_entry_point = (
+            "run_4axis_full_corpus_test.BINARY_NO_TIEBREAKER_SYSTEM + "
+            "insights.prompts.WELLBEING_CLASSIFIER_PROMPT via "
+            "insights.llm_backend.send_text (single-pass; no prescan; max_tokens=400)"
         )
     else:
         raise ValueError(f"Unknown variant: {variant}")
@@ -729,6 +823,172 @@ def run_one_reasoning_two_pass(
 
 
 # ---------------------------------------------------------------------------
+# Binary-reasoning invocation (WELLBEING_CLASSIFIER_SYSTEM + reasoning field)
+# ---------------------------------------------------------------------------
+
+def run_one_binary_reasoning_pass(
+    backend: BackendConfig,
+    student_id: str,
+    student_name: str,
+    submission_text: str,
+    *,
+    source: str,
+    expected_axis: str | None,
+    pattern: str | None,
+    signal_type: str | None,
+    run_idx: int,
+) -> dict:
+    """Binary classifier guardrails + reasoning field, minimal schema change.
+
+    Uses WELLBEING_CLASSIFIER_SYSTEM verbatim with only the output schema
+    modified: reasoning field added before axis, max_tokens=400.
+    Uses WELLBEING_CLASSIFIER_PROMPT (same as production binary, no prescan).
+    Designed for paper comparability: isolates the effect of reasoning space
+    from guardrail language differences between binary and 4-axis prompts.
+    """
+    import re as _re
+
+    prompt = WELLBEING_CLASSIFIER_PROMPT.format(
+        student_name=student_name,
+        signal_prefix="",
+        assignment_prompt=ASSIGNMENT_PROMPT_TEXT,
+        submission_text=submission_text,
+    )
+    t0 = time.time()
+    try:
+        raw_output = send_text(
+            backend,
+            prompt,
+            BINARY_REASONING_SYSTEM,
+            max_tokens=REASONING_PASS_MAX_TOKENS,
+        )
+        elapsed = round(time.time() - t0, 1)
+        reasoning_match = _re.search(r'"reasoning"\s*:\s*"([^"]*)"', raw_output or "")
+        reasoning = reasoning_match.group(1) if reasoning_match else ""
+        axis_match = _re.search(r'"axis"\s*:\s*"([^"]*)"', raw_output or "")
+        axis = axis_match.group(1) if axis_match else "PARSE_ERROR"
+        conf_match = _re.search(r'"confidence"\s*:\s*([\d.]+)', raw_output or "")
+        confidence = float(conf_match.group(1)) if conf_match else 0.0
+        signal_match = _re.search(r'"signal"\s*:\s*"([^"]*)"', raw_output or "")
+        signal = signal_match.group(1) if signal_match else ""
+        error = None
+    except Exception as exc:  # noqa: BLE001
+        elapsed = round(time.time() - t0, 1)
+        raw_output = ""
+        reasoning = ""
+        axis = "ERROR"
+        confidence = 0.0
+        signal = ""
+        error = str(exc)
+        log.exception("binary-reasoning failed for %s: %s", student_id, exc)
+
+    correct = "N/A"
+    if expected_axis is not None and axis not in ("ERROR", "PARSE_ERROR"):
+        correct = "OK" if axis == expected_axis else "MISMATCH"
+
+    return {
+        "codepath": "test_harness_binary_reasoning_pass",
+        "classifier_variant": "binary-reasoning",
+        "source": source,
+        "run": run_idx,
+        "student_id": student_id,
+        "student_name": student_name,
+        "pattern": pattern,
+        "signal_type": signal_type,
+        "expected_axis": expected_axis,
+        "actual_axis": axis,
+        "confidence": confidence,
+        "reasoning": reasoning,
+        "signal": signal,
+        "prescan_signals": [],
+        "correct": correct,
+        "raw_output": raw_output,
+        "time_seconds": elapsed,
+        "error": error,
+    }
+
+
+def run_one_binary_no_tiebreaker_pass(
+    backend: BackendConfig,
+    student_id: str,
+    student_name: str,
+    submission_text: str,
+    *,
+    source: str,
+    expected_axis: str | None,
+    pattern: str | None,
+    signal_type: str | None,
+    run_idx: int,
+) -> dict:
+    """Binary classifier guardrails with tiebreaker paragraph removed, no reasoning.
+
+    Uses BINARY_NO_TIEBREAKER_SYSTEM (WELLBEING_CLASSIFIER_SYSTEM minus the
+    'DEFAULT TO NOT FLAGGING WHEN AMBIGUOUS' paragraph) with original schema
+    (no reasoning field), max_tokens=400. Uses WELLBEING_CLASSIFIER_PROMPT.
+    Designed to isolate the tiebreaker's effect from the reasoning-space effect:
+    if removing the tiebreaker alone reverses WB04/WB08/WB11 suppression, the
+    tiebreaker is the mechanism. If not, the equity guards + confidence calibration
+    suppress independently, and reasoning space is what drives the reversal.
+    """
+    import re as _re
+
+    prompt = WELLBEING_CLASSIFIER_PROMPT.format(
+        student_name=student_name,
+        signal_prefix="",
+        assignment_prompt=ASSIGNMENT_PROMPT_TEXT,
+        submission_text=submission_text,
+    )
+    t0 = time.time()
+    try:
+        raw_output = send_text(
+            backend,
+            prompt,
+            BINARY_NO_TIEBREAKER_SYSTEM,
+            max_tokens=REASONING_PASS_MAX_TOKENS,
+        )
+        elapsed = round(time.time() - t0, 1)
+        axis_match = _re.search(r'"axis"\s*:\s*"([^"]*)"', raw_output or "")
+        axis = axis_match.group(1) if axis_match else "PARSE_ERROR"
+        conf_match = _re.search(r'"confidence"\s*:\s*([\d.]+)', raw_output or "")
+        confidence = float(conf_match.group(1)) if conf_match else 0.0
+        signal_match = _re.search(r'"signal"\s*:\s*"([^"]*)"', raw_output or "")
+        signal = signal_match.group(1) if signal_match else ""
+        error = None
+    except Exception as exc:  # noqa: BLE001
+        elapsed = round(time.time() - t0, 1)
+        raw_output = ""
+        axis = "ERROR"
+        confidence = 0.0
+        signal = ""
+        error = str(exc)
+        log.exception("binary-no-tiebreaker failed for %s: %s", student_id, exc)
+
+    correct = "N/A"
+    if expected_axis is not None and axis not in ("ERROR", "PARSE_ERROR"):
+        correct = "OK" if axis == expected_axis else "MISMATCH"
+
+    return {
+        "codepath": "test_harness_binary_no_tiebreaker_pass",
+        "classifier_variant": "binary-no-tiebreaker",
+        "source": source,
+        "run": run_idx,
+        "student_id": student_id,
+        "student_name": student_name,
+        "pattern": pattern,
+        "signal_type": signal_type,
+        "expected_axis": expected_axis,
+        "actual_axis": axis,
+        "confidence": confidence,
+        "signal": signal,
+        "prescan_signals": [],
+        "correct": correct,
+        "raw_output": raw_output,
+        "time_seconds": elapsed,
+        "error": error,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Per-variant driver
 # ---------------------------------------------------------------------------
 
@@ -751,6 +1011,10 @@ def run_variant(
         run_one = run_one_reasoning_pass
     elif variant == "reasoning-two-pass":
         run_one = run_one_reasoning_two_pass
+    elif variant == "binary-reasoning":
+        run_one = run_one_binary_reasoning_pass
+    elif variant == "binary-no-tiebreaker":
+        run_one = run_one_binary_no_tiebreaker_pass
     else:
         raise ValueError(f"Unknown variant: {variant}")
 
@@ -765,6 +1029,12 @@ def run_variant(
         print(f"  Classifier: FOUR_AXIS_REASONING_SYSTEM (reasoning field, "
               f"max_tokens={REASONING_PASS_MAX_TOKENS})"
               + (" + prescan pass 0" if variant == "reasoning-two-pass" else ""))
+    elif variant == "binary-reasoning":
+        print(f"  Classifier: BINARY_REASONING_SYSTEM (WELLBEING_CLASSIFIER_SYSTEM "
+              f"+ reasoning field, max_tokens={REASONING_PASS_MAX_TOKENS}, no prescan)")
+    elif variant == "binary-no-tiebreaker":
+        print(f"  Classifier: BINARY_NO_TIEBREAKER_SYSTEM (WELLBEING_CLASSIFIER_SYSTEM "
+              f"minus tiebreaker paragraph, original schema, max_tokens={REASONING_PASS_MAX_TOKENS})")
     else:
         print(f"  Classifier: insights.submission_coder.classify_wellbeing")
     print(f"{'=' * 70}\n")
@@ -804,6 +1074,8 @@ def run_variant(
                 f"({rec['time_seconds']}s)"
                 + (f"  ERROR: {rec['error']}" if rec['error'] else "")
             )
+            if rec.get("reasoning"):
+                print(f"      reasoning: {rec['reasoning'][:120]}")
 
     # --- Wellbeing synthetic cases ---
     for run_idx in range(1, n_runs + 1):

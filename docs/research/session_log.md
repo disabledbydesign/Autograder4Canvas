@@ -7,15 +7,14 @@ Old content gets archived to `docs/research/logs/` when > 200 lines.
 
 ## Current state (2026-05-12, updated ~11AM)
 
-### Genob full corpus — RUNNING (PID 13331)
-`caffeinate -id python3 scripts/run_genob_full_corpus_test.py` (launched from output-format-bias dir)
+### Genob full corpus — RUNNING (PID 10611)
+`caffeinate -id python3 run_genob_full_corpus_test.py` (from output-format-bias dir)
+Started 10:57 AM after binary-reasoning completed. Chain ran automatically (no Ctrl+C in time).
 
-**Loop order**: pass-first (all 46 students per pass, then next pass) — changed this session so pass 1 results are readable while passes 2-5 run.
-**Checkpoints**: `.partial.json` written after each complete pass — worst-case loss is 1 pass.
-**Conditions**: `a2` and `a2_no_context` (written as separate JSON files, condition-by-condition).
-**Output dir**: `~/Documents/GitHub/research/output-format-bias/data/raw_outputs/`
+**Loop order**: pass-first. **Checkpoints**: `.partial.json` after each pass.
+**Conditions**: `a2` and `a2_no_context`. **Output dir**: `~/Documents/GitHub/research/output-format-bias/data/raw_outputs/`
 
-Do NOT kill this unless necessary. Watch `ps aux | grep run_genob` to confirm still alive.
+Do NOT kill. Watch `ps aux | grep run_genob` to confirm alive.
 
 ---
 
@@ -26,14 +25,18 @@ Do NOT kill this unless necessary. Watch `ps aux | grep run_genob` to confirm st
 cd /Users/june/Documents/GitHub/Autograder4Canvas
 caffeinate -id python3 scripts/run_4axis_full_corpus_test.py --variant reasoning --n-runs 1
 ```
-~45 min. Writes `test_n_4axis_REASONING_FULL_CORPUS_gemma12b_<date>.json`.
+~45 min. Key question: does 4-axis (no tiebreaker, reasoning) handle WB04/WB08/WB11 and S020 differently?
 
-**2. 4-axis reasoning — two-pass, 1 run** (NEEDS BUILDING first):
-Add `--variant reasoning-two-pass` to `run_4axis_full_corpus_test.py`: prescan (pass 0, unchanged) + `FOUR_AXIS_REASONING_SYSTEM` classifier (pass 1, replaces `WELLBEING_CLASSIFIER_SYSTEM`). Build this before launching.
+**2. Binary-no-tiebreaker — 1 run** (READY — built this session):
+```bash
+cd /Users/june/Documents/GitHub/Autograder4Canvas
+caffeinate -id python3 scripts/run_4axis_full_corpus_test.py --variant binary-no-tiebreaker --n-runs 1
+```
+~40 min. Writes `test_binary_NO_TIEBREAKER_FULL_CORPUS_gemma12b_<date>.json`.
+Key question: does removing the tiebreaker alone (without reasoning) reverse WB04/WB08/WB11 suppression?
+If yes → tiebreaker is the mechanism. If no → equity guards + confidence calibration suppress independently.
 
-**3. If either reasoning run shows calibrated confidence variance → run 4 more passes each.**
-
-Goal: paper comparison — binary single-pass vs 4-axis-with-reasoning on same 46-student corpus.
+Goal: 4-condition paper comparison: Test R → binary-reasoning → 4-axis-reasoning → binary-no-tiebreaker.
 
 ---
 
@@ -64,8 +67,8 @@ Confirmed by reading raw model output: Gemma 12B literally writes `"confidence":
 Binary mean: 61.2s vs 4-axis mean: 35.4s. Not explained by two-pass vs one-pass — **both Test R (binary) and Test N (4-axis) are single-pass**. Difference is max_tokens: binary uses 800 (reasoning in output), 4-axis uses 150 (JSON only). `classify_wellbeing` two-pass has never been tested at full corpus scale.
 
 ### Two new false-positive patterns (4-axis full corpus, pass 1)
-- **S026 DeShawn Mercer** — BURNOUT at 0.95. Third-party attribution: "she is exhausted" = his mother (working overnight hospital shifts fighting school system for DeShawn). Model reads caregiving language and attributes distress to student. Same failure mode as Jasmine Torres / S024 Ingrid Vasquez. 4-axis prompt uses "OWN" in CRISIS definition but not in BURNOUT — gap in prompt coverage.
-- **S020 Jake Novak** — CRISIS at 0.95. Premise-challenger using personal-class evidence analytically. "Can't pay the electric bill half the time" is deployed as intellectual argument about intersectionality's class blind spot, not personal disclosure. Prompt has the right framing ("leaking through vs. engaged") but vivid financial detail overrides argumentative context.
+- **S026 DeShawn Mercer** — BURNOUT at 0.95. Third-party attribution: "she is exhausted" = his mother. 4-axis BURNOUT definition lacked "OWN" qualifier. **Fixed in `prompts.py` this session** (BURNOUT now anchored to student's own material conditions; family member depletion explicitly excluded). Not fixed in `run_alt_hypothesis_tests.py` to preserve comparability with past runs.
+- **S020 Jake Novak** — CRISIS at 0.95 in terminal printout. ⚠️ **DISCREPANCY RESOLVED**: 4-axis single-pass JSON shows S020 as ENGAGED at 0.95 across all 5 runs. Terminal printout was a keyword-matching error (word "CRISIS" in reasoning text misread as classification). Binary-reasoning JSON **confirms CRISIS at 0.95** — S020 is a real false positive in the binary-reasoning run. The premise-challenger pattern (analytical use of class evidence) produces high-confidence FP with reasoning. In Test R (binary, no reasoning), S020 was raw=FLAG at 0.60 → cleared by production threshold. Reasoning space removes the threshold protection and confidently misreads the analytical framing as personal disclosure.
 
 ### Known edge cases — do not claim as evidence
 - **S002 Jordan Kim**: corpus marks expected=FLAG but signal is deliberately implicit. Test calibration edge case.
@@ -81,7 +84,9 @@ Binary mean: 61.2s vs 4-axis mean: 35.4s. Not explained by two-pass vs one-pass 
 | ESL transfer-as-intellectual-stretch (E002) | P + P2 + P3 | Prompt fix confirmed |
 | AAVE/code-switching (E001, E003) | P + P2 + P3 | Replicated |
 | Community resilience guard | Test N + ext | 4/4 cultural contexts |
-| Equity guards suppress genuine disclosure at 0.6 | Test R full corpus | **NEW — confirmed 3 passes** |
+| Equity guards suppress genuine disclosure at 0.6 | Test R full corpus | **Confirmed 3 passes** |
+| Reasoning space reverses equity suppression (WB04/WB08/WB11) | Binary-reasoning full corpus | **NEW — 0.60→0.95 CRISIS** |
+| Reasoning space worsens premise-challenger FP (S020) | Binary-reasoning full corpus | **NEW — 0.60→0.95 CRISIS, high-confidence FP** |
 | Tone policing in trajectory report (T006) | Q + Q3 | Persistent — Q4 pending |
 
 ---
@@ -101,5 +106,7 @@ Binary mean: 61.2s vs 4-axis mean: 35.4s. Not explained by two-pass vs one-pass 
 - **Trajectory flags**: always `--reset-flags` before new trajectory runs.
 - **Research outputs**: paper-relevant JSONs in `~/Documents/GitHub/research/output-format-bias/data/raw_outputs/`.
 - **Genob script changes this session**: loop order (pass-first), per-pass checkpoint saves, `timestamp` param added to `run_condition`. Changes committed.
-- **4-axis script changes this session**: `--variant reasoning` added (`FOUR_AXIS_REASONING_SYSTEM`, max_tokens=400, reasoning field in JSON output). `--variant reasoning-two-pass` planned but not yet built.
+- **4-axis script changes this session**: `--variant reasoning` added (`FOUR_AXIS_REASONING_SYSTEM`, max_tokens=400, reasoning field, reasoning before axis in schema). `--variant binary-reasoning` added (`BINARY_REASONING_SYSTEM` = `WELLBEING_CLASSIFIER_SYSTEM` verbatim + reasoning field, max_tokens=400). `--variant reasoning-two-pass` planned but not yet built.
+- **prompts.py BURNOUT fix**: BURNOUT definition now anchored to student's OWN material conditions; family member depletion explicitly excluded. Prevents S026-style third-party attribution FP.
+- **Binary-reasoning output**: `test_binary_REASONING_FULL_CORPUS_gemma12b_2026-05-12_1057.json` (46/46 correct by corpus labels, S020 FP at 0.95 not counted as error since expected=None).
 - **Archive**: full prior session log at `docs/research/logs/session_log_archive_2026-05-12.md`.

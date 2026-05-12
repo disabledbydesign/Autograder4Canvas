@@ -7096,3 +7096,128 @@ All students classified correctly. Uniform confidence 0.95 (temperature anchorin
 - Fix Pass 1 NONE detection to prevent S031 from reaching Pass 2 (current: ENGAGED; correct: NONE)
 - Consider whether S029 borderline CHECK-IN warrants a prompt note clarifying that "identity navigation is exhausting" is NOT a self-disclosure signal — this would bring Pass 2 in line with Pass 1's explicit instruction
 
+
+---
+
+## Test R Full Corpus — Binary Wellbeing Classifier, 5-Run Replication (2026-05-12)
+
+**File**: `test_r_wellbeing_concern_FULL_CORPUS_gemma12b_2026-05-12_0150.json`
+**Model**: Gemma 12B via MLX
+**Provenance**: git commit `210121a`
+**Designed to test**: Whether the production binary wellbeing classifier (`WELLBEING_CLASSIFIER_SYSTEM`) reliably detects the 14 WB synthetic corpus cases at full corpus scale (46 students: 32 ES + 14 WB), and whether the equity guards + 0.7 production threshold suppress genuine signals in edge cases.
+**Method**: Single-pass binary classification. Full 46-student corpus (32 ethnic studies + 14 wellbeing synthetic cases). 5 independent runs. Production post-processing applied: passages with confidence ≥ 0.7 → FLAG; below threshold → CLEAR. Mean inference time: 60.4s/student.
+**Duration**: 5 runs × ~46 min each. Run launched overnight 2026-05-12 ~1AM.
+
+### Results
+
+**Per run** (identical across all 5 runs — perfectly deterministic):
+
+| Metric | Value |
+|---|---|
+| Overall correct | 42/46 (91%) |
+| WB correct | 11/14 |
+| Raw flags | 21/46 |
+| Production flags | 8/46 |
+| Runs with this result | 5/5 |
+
+**Mismatches (4 students, stable across all 5 runs):**
+
+| Student | Expected | Raw result | Prod result | Raw confidence | Why |
+|---|---|---|---|---|---|
+| S002 Jordan Kim | FLAG | CLEAR | CLEAR | — | Implicit signal ("its late") never detected; 0 passages flagged |
+| WB04 Jasmine Torres | FLAG | FLAG | CLEAR | 0.60 | Below 0.7 threshold |
+| WB08 Brandon Mitchell | FLAG | FLAG | CLEAR | 0.60 | Below 0.7 threshold |
+| WB11 Kaya Runningwater | FLAG | FLAG | CLEAR | 0.60 | Below 0.7 threshold |
+
+### Qualitative findings
+
+**WB04/WB08/WB11 — confidence suppressed to exactly 0.60 across 5/5 runs.** These three students share surface-level patterns: structural-analysis framing, third-party narrative (reporting others' conditions), community resilience register. These patterns were designed into the equity guards to prevent false positives on clear ES students who discuss community hardship analytically. But they are also the exact forms genuine crisis disclosure takes for these students:
+- WB04: mother's undocumented status is the structural barrier — third-party framing of what is a present-tense safety situation
+- WB08: cousin's death recounted through community/family witness — flattened affect + academic register as grief response
+- WB11: uncle's injury described in material-conditions terms (tribal food distribution, beadwork income) — resilience framing over a material crisis
+
+The equity guards succeed at preventing overreach (clear ES students correctly not flagged), but by depressing confidence on these surface patterns they catch the genuine signals in the same suppression. The 0.7 threshold clears them. The 0.60 confidence is consistent and deterministic — not model noise, but a systematic classification response to the prompt structure.
+
+**S002 Jordan Kim** — not detected at all (0 passages flagged, raw=CLEAR). The signal is a truncated late-night submission ending mid-sentence: "its late and im just trying to." Binary classifier does not detect absence of completion as a signal — it reads the present text and finds no concerning passages. This is a structural gap, not a threshold issue.
+
+### Structural interpretation
+
+The equity guards and 0.7 threshold function as a coupled suppression system: the guards depress confidence on third-party narrative, resilience framing, and structural-analysis register; the threshold converts depressed confidence to CLEAR. For ES students using these same patterns to discuss community hardship analytically, this is the correct behavior. For WB04/WB08/WB11, whose genuine crisis disclosure uses the same surface patterns, the system suppresses true positives.
+
+This is likely why the binary classifier was retired in favor of the observation layer in production: binary classification cannot hold the distinction between "third-party narrative = community analysis" and "third-party narrative = structural reporting of one's own crisis." The observation layer handles this through generative reading, not threshold filtering.
+
+### Limitations
+- Synthetic corpus (WB students designed to test known edge cases — not a random sample)
+- Single model (Gemma 12B MLX); behavior may differ on other architectures
+- n=5 on same corpus; doesn't vary prompts, temperatures, or model versions
+- Post-processing (0.7 threshold) is production behavior; raw classifier detects WB04/WB08/WB11 but production system does not
+
+### Proposed follow-up
+- Run binary + reasoning field (same prompt, add reasoning before axis in schema) to test whether deliberation space overrides confidence suppression
+- Verify S002 with two-pass: pass 1 ENGAGED → pass 2 CHECK-IN catches "its late" (prior Test P finding suggests yes)
+
+---
+
+## Binary-Reasoning Full Corpus — WELLBEING_CLASSIFIER_SYSTEM + Reasoning Field (2026-05-12)
+
+**File**: `test_binary_REASONING_FULL_CORPUS_gemma12b_2026-05-12_1057.json`
+**Model**: Gemma 12B via MLX
+**Provenance**: git commit `b08a4e8` + uncommitted changes to `scripts/run_4axis_full_corpus_test.py` and `src/insights/prompts.py`
+**Designed to test**: Whether adding a reasoning field (generated *before* the axis classification in the output schema) changes classification outcomes for the equity-suppressed cases (WB04/WB08/WB11) identified in Test R. Paper-comparable to Test R: same system prompt, same user prompt, same model — only the output schema changes.
+**Method**: Single-pass binary classification. `BINARY_REASONING_SYSTEM` = `WELLBEING_CLASSIFIER_SYSTEM` (verbatim) with output schema modified: `{"reasoning": "2-3 sentences working through the evidence before committing", "axis": ..., "signal": ..., "confidence": ...}` (reasoning before axis, so model generates evidence before committing to a classification). max_tokens=400 (vs 800 in Test R). 46 students, 1 run. Mean inference time: 53.6s/student.
+
+**Note on BURNOUT fix**: This run also incorporated a BURNOUT definition fix applied to `WELLBEING_CLASSIFIER_SYSTEM` in the same session: the BURNOUT axis was clarified to require the student's *own* material conditions to be depleting (not a family member's). This fix does not affect the CRISIS-axis findings (WB04/WB08/WB11 and S020); it matters for WB02/WB05 (BURNOUT cases) and for S026 DeShawn Mercer (third-party attribution FP in 4-axis run).
+
+### Results
+
+| Metric | Value |
+|---|---|
+| WB correct | 14/14 (100%) |
+| ES false positives | 1 (S020 Jake Novak — expected=None, so not counted as error) |
+| ES correctly clear | 31/32 |
+| Confidence (modal) | 0.95 (40/46 students) |
+| Confidence (secondary) | 0.90 (6 students: S002, S012, S018, S029, WB02, WB05) |
+
+**Equity cases (direct comparison with Test R):**
+
+| Student | Test R (binary) | Binary-reasoning | Change |
+|---|---|---|---|
+| WB04 Jasmine Torres | 0.60 → prod=CLEAR | **CRISIS 0.95** | Suppression reversed |
+| WB08 Brandon Mitchell | 0.60 → prod=CLEAR | **CRISIS 0.95** | Suppression reversed |
+| WB11 Kaya Runningwater | 0.60 → prod=CLEAR | **CRISIS 0.95** | Suppression reversed |
+| S020 Jake Novak | 0.60 → prod=CLEAR | **CRISIS 0.95** | New high-confidence FP |
+| S026 DeShawn Mercer | (not in Test R corpus) | ENGAGED 0.95 | BURNOUT fix effective |
+
+### Qualitative findings
+
+**WB04/WB08/WB11 — complete reversal.** All three equity-suppressed students classify as CRISIS at 0.95 with reasoning. The reasoning field examples are paper-quality:
+
+- WB11 (Kaya Runningwater): *"While the student expresses resilience and community support, these circumstances constitute a present-tense material crisis."* — The model explicitly holds both the resilience framing AND the CRISIS classification, showing the distinction the binary classifier could not make.
+- WB08 (Brandon Mitchell): *"The student describes a recent, traumatic loss of their cousin due to a police encounter... While the student also reflects on the readings and expresses feeling tired, the primary signal is the recent loss and family distress."* — Distinguishes primary signal from secondary academic engagement.
+- WB04 (Jasmine Torres): *"The disclosure of their home situation meets the criteria for a CRISIS classification."* — Cuts through the structural-analysis framing to the underlying safety situation.
+
+**Schema order matters.** The mechanism appears to be that reasoning-before-axis forces evidence generation before axis commitment. The tiebreaker instruction ("default to NOT flagging when ambiguous") is in the system prompt but is encountered after the model has already generated the reasoning chain. The reasoning process builds commitment to the evidence, which the axis decision crystallizes. Without reasoning space (Test R), the tiebreaker operates on the confidence score directly and depresses it below threshold.
+
+**S020 Jake Novak — new high-confidence false positive.** Test R correctly cleared S020 via threshold (raw=FLAG at 0.60 → prod=CLEAR). Binary-reasoning produces CRISIS at 0.95. The reasoning: *"The student describes their family's financial struggles... the mention of their family's financial hardship reveals a situation beyond the scope of the assignment."* This is wrong: S020 is deploying class evidence analytically as an argument about intersectionality's class blind spot, not disclosing personal financial crisis. The reasoning confidently misreads argumentative register as self-disclosure. The 0.7 production threshold that protected S020 in Test R no longer helps because the reasoning field produces high confidence in the misclassification.
+
+**S026 DeShawn Mercer — BURNOUT fix effective.** Classified ENGAGED at 0.95. Reasoning correctly identifies the mother's exhaustion as third-party material rather than S026's own depletion. The BURNOUT definition fix ("A student describing a family member's exhaustion... is NOT evidence of BURNOUT — the depletion must be the student's own") is working as intended.
+
+**S002 Jordan Kim — still not detected.** ENGAGED at 0.90. Reasoning reads the truncated submission as course material engagement. The mid-sentence cutoff is not in scope for any axis; binary-reasoning does not help with the S002 implicit signal. Consistent with Test R.
+
+### Structural interpretation
+
+Reasoning-before-axis reverses equity suppression but changes the failure mode rather than eliminating it. Test R's failure was confidence suppression: equity guards + tiebreaker prevent genuine crises from reaching the production threshold. Binary-reasoning's failure is high-confidence false positives: the reasoning process reads vivid financial or class-inflected language as disclosure regardless of argumentative context. The premise-challenger pattern (using class evidence to make an analytical argument) is the specific failure case — binary-reasoning has no equivalent protection for it because the reasoning cannot distinguish "deployed analytically" from "disclosed personally."
+
+For the paper: this is a stronger finding than "reasoning fixes everything." The comparison shows that reasoning space changes which failure mode wins, and names the specific population difference that determines whether it helps (genuine crisis with suppression-triggering surface forms) or hurts (analytical students using personal class evidence).
+
+### Limitations
+- n=1 (no replication)
+- BURNOUT definition fix is a confound for WB02/WB05 comparison — cannot cleanly separate fix from reasoning field effects for BURNOUT cases. Core finding (WB04/WB08/WB11 CRISIS reversal) is unaffected since these are CRISIS-axis cases.
+- max_tokens=400 vs Test R's 800 — different generation budget. Lower max_tokens may affect classification on longer submissions.
+- S020 expected=None — the FP is real but not counted against the corpus accuracy score. This understates the practical error rate.
+- Single model and hardware; MLX inference temperature behavior may affect confidence values
+
+### Proposed follow-up
+- Run `--variant reasoning` (4-axis schema, no tiebreaker) to compare: does removing the tiebreaker alone produce similar reversal? Does it handle S020 differently without the binary guardrails?
+- Replicate binary-reasoning at n≥3 to verify stability (especially S020 FP confidence)
+- Test binary-reasoning with premise-challenger fix: can a targeted prompt addition distinguish analytical use of class evidence from disclosure?

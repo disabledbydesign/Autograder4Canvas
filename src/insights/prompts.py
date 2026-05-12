@@ -419,324 +419,6 @@ EXAMPLE (different student and assignment):
 }}"""
 
 # ---------------------------------------------------------------------------
-# Concern detection (ALWAYS separate, any tier)
-# ---------------------------------------------------------------------------
-
-CONCERN_PROMPT = """\
-Review this student submission for passages that might need the teacher's \
-attention. You are looking for signs of STUDENT WELLBEING issues or \
-language that essentializes or dismisses groups.
-
-STUDENT: {student_name}
-ASSIGNMENT PROMPT: {assignment_prompt}
-{class_context}
-NON-LLM SIGNAL MATRIX RESULT:
-{signal_matrix_result}
-
-SUBMISSION TEXT:
----
-{submission_text}
----
-
-CRITICAL INSTRUCTIONS — READ VERY CAREFULLY:
-
-THE MOST IMPORTANT DISTINCTION: You must distinguish between COURSE CONTENT \
-and STUDENT WELLBEING. Many courses require students to discuss violence, \
-trauma, oppression, genocide, sexual assault, and other difficult topics. \
-A student writing ABOUT these topics is doing the assignment, not expressing \
-personal distress. Your job is to detect whether the STUDENT is in trouble, \
-not whether the SUBJECT MATTER is disturbing.
-
-COURSE CONTENT vs. STUDENT WELLBEING — key test:
-Ask: "Is the student discussing something that happened TO OTHERS (in history, \
-in society, in the readings) or revealing something about THEIR OWN current \
-mental state and personal crisis?"
-
-Do NOT flag ANY of the following:
-- Students discussing, analyzing, or emotionally responding to assigned course \
-material about historical trauma, violence, colonialism, genocide, sexual \
-violence, slavery, forced removal, or any other difficult subject matter — \
-THIS IS THE ASSIGNMENT, not a concern
-- Students expressing anger, grief, shock, or moral outrage about injustice \
-described in course material (e.g. "It's crazy that this happened", "this \
-makes me sick", "I can't believe this was legal")
-- Students using words like "triggered", "overwhelming", or "hard to read" \
-when describing their emotional response to difficult course material — this \
-is emotional engagement with the assignment, not clinical distress
-- Students expressing anger about racism, structural violence, or injustice \
-(this is appropriate academic engagement)
-- Students describing their own experiences with discrimination
-- Students critiquing institutional racism, policing, or immigration enforcement
-- Students using urgent or passionate language about justice issues
-- Students whose writing style differs from academic English conventions
-- Students using colloquial intensifiers like "crazy", "insane", "wild" when \
-reacting to course content
-- Students naming their own disability, neurodivergence, or learning difference \
-as part of their analysis — a student writing "I have dyslexia and ADHD" or \
-"as someone with a learning disability" is doing SELF-ADVOCACY, not expressing \
-distress. Disability disclosure used to analyze one's own experience through a \
-course framework is intellectual work, not a wellbeing concern. The question is \
-not whether the student has a hard time — it is whether the systems around them \
-were built for someone else
-- Students who say their thoughts "aren't organized" or their writing "isn't \
-perfect" — when a student names their own divergence from academic convention \
-and STILL produces substantive analysis, they are doing metacognitive work. \
-Do not read this as inability; read it as awareness of a mismatch between \
-their thinking and the form they've been given to express it
-
-DO flag:
-- Language that essentializes racial or ethnic groups ("all X people...", \
-"they always...", "those people")
-- Colorblind claims ("I don't see race", "not about race", "reverse racism")
-- Dismissal of other students' lived experiences
-- Tone policing ("too angry", "too emotional", "calm down")
-- Savior narratives ("those poor people need our help", "we should save them", \
-"it's so sad what they go through") — positions the speaker as rescuer and the \
-studied group as helpless, erasing their agency and self-determination
-- Exoticizing ("their culture is so beautiful and spiritual", "they have such \
-a rich tradition", "I wish I could be that connected to my roots") — admiration \
-that fixes a group as essentially different, turning people into aesthetic objects
-- Model minority framing ("Asians succeed because of their culture", "some \
-groups just value education more") — uses one racialized group's perceived \
-success to dismiss structural barriers and discipline other groups
-- Deficit framing of poverty ("those kids don't have access to...", "students \
-from low-income backgrounds can't...", "the cycle of poverty") — locates the \
-problem in the community rather than in the structures that produce deprivation
-- Student revealing PERSONAL crisis: expressions of hopelessness about their \
-OWN life, self-harm ideation, feeling unable to continue, requests for help \
-that go beyond the academic context
-- Student language that shifts from discussing course material to discussing \
-their own inability to cope as a PERSON (not just "this reading was hard" \
-but "I don't know how to keep going")
-
-HOW TO TELL THE DIFFERENCE — examples:
-- "This makes me angry" about historical injustice → ENGAGEMENT, not a concern
-- "I can't do this anymore" about their own life → POTENTIAL CONCERN
-- "This passage about rape was triggering" → emotional engagement with material
-- "I feel like nobody would care if I disappeared" → POTENTIAL CONCERN
-- "It's crazy how they treated Native women" → discussing course content
-- "Reading about this violence was really heavy" → processing difficult material
-- "I haven't been able to get out of bed and I don't see the point" → CONCERN
-- "I have dyslexia and ADHD and I'm Latino and first-gen honors" → SELF-ADVOCACY \
-using intersectionality to analyze their own position. This is the assignment.
-- "my thoughts aren't organized in the way an essay is supposed to be organized" → \
-METACOGNITIVE AWARENESS of form mismatch, not inability. The student is arguing \
-that the form doesn't fit the content — that IS an intellectual contribution.
-
-When the assignment ITSELF deals with violence, trauma, or injustice, set \
-your threshold MUCH higher for flagging. A student writing passionately or \
-emotionally about the mistreatment of Native peoples in an ethnic studies \
-class is doing exactly what the assignment asks. Only flag if the student \
-shifts from analyzing course content to revealing personal crisis.
-
-The non-LLM analysis classified this submission as shown above. Consider \
-this context — if the non-LLM pass says "APPROPRIATE: political urgency \
-about injustice", that is very likely correct.
-{profile_fragment}
-
-Respond with JSON:
-{{
-  "concerns": [
-    {{
-      "flagged_passage": "exact text from the submission",
-      "surrounding_context": "2-3 sentences around the flagged passage",
-      "why_flagged": "brief explanation",
-      "confidence": 0.0-1.0
-    }}
-  ]
-}}
-
-If no concerns, return: {{"concerns": []}}
-
-EXAMPLE of what IS a concern (essentializing language):
-{{
-  "concerns": [
-    {{
-      "flagged_passage": "I don't see why we keep talking about race, everyone is equal now",
-      "surrounding_context": "The student was responding to the Omi and Winant reading. They wrote: 'I don't see why we keep talking about race, everyone is equal now. My family worked hard and succeeded without any special treatment.'",
-      "why_flagged": "Colorblind ideology — dismisses structural racism. Teacher may want to engage this student with specific evidence.",
-      "confidence": 0.75
-    }}
-  ]
-}}
-
-EXAMPLE of what IS a concern (student wellbeing):
-{{
-  "concerns": [
-    {{
-      "flagged_passage": "I honestly don't know why I'm still doing any of this",
-      "surrounding_context": "After a paragraph analyzing the reading, the student wrote: 'I honestly don't know why I'm still doing any of this. Nothing feels like it matters anymore. I'm just going through the motions.'",
-      "why_flagged": "Student shifts from course analysis to expressing personal hopelessness. May indicate wellbeing issue beyond the assignment. Teacher should check in.",
-      "confidence": 0.8
-    }}
-  ]
-}}
-
-EXAMPLE of what is NOT a concern (engaging with difficult material):
-A student in an ethnic studies class writes: "Reading about the rape and \
-murder of Native women made me feel sick. It's crazy that this is still \
-happening and nobody talks about it. This passage was really triggering \
-but I'm glad we're learning about it." — This is a student processing \
-difficult course material with appropriate emotional engagement. Do NOT \
-flag this.
-
-EXAMPLE of what is NOT a concern (passionate engagement):
-"The system of white supremacy in this country makes me furious. How can \
-we read about redlining and NOT be angry?" — This is appropriate engagement. \
-Do NOT flag this.
-
-EXAMPLE of what IS a concern (scientific-sounding essentialism):
-{{
-  "concerns": [
-    {{
-      "flagged_passage": "certain populations are just genetically predisposed to these health outcomes",
-      "surrounding_context": "In a reflection on health disparities, the student wrote: 'I think certain populations are just genetically predisposed to these health outcomes. It's not really about access or racism, it's biology.'",
-      "why_flagged": "Biological essentialism — attributes health disparities to genetics rather than engaging with structural determinants (housing, pollution, food access, insurance, provider bias). Teacher may want to direct student to evidence on social determinants.",
-      "confidence": 0.8
-    }}
-  ]
-}}
-
-EXAMPLE of what IS a concern (pathologizing cultural practices):
-{{
-  "concerns": [
-    {{
-      "flagged_passage": "that kind of parenting would be considered neglect in our culture",
-      "surrounding_context": "Responding to a case study on child development, the student wrote: 'The family's approach to discipline seems really unhealthy. That kind of parenting would be considered neglect in our culture. I think the child clearly has attachment issues because of it.'",
-      "why_flagged": "Pathologizes a cultural parenting practice using Western diagnostic frameworks as universal norm. Student also diagnoses a child from surface description. Teacher may want to discuss cultural context in developmental assessment.",
-      "confidence": 0.7
-    }}
-  ]
-}}
-
-EXAMPLE of what IS a concern (savior narrative):
-{{
-  "concerns": [
-    {{
-      "flagged_passage": "it breaks my heart to see these communities suffering and I want to dedicate my career to helping them",
-      "surrounding_context": "In a reflection on urban poverty, the student wrote: 'It breaks my heart to see these communities suffering and I want to dedicate my career to helping them. They need people who understand policy to advocate for them because they can't do it themselves.'",
-      "why_flagged": "Savior narrative — positions the studied community as helpless and the student as rescuer, erasing community agency and self-advocacy. Teacher may want to redirect toward solidarity frameworks and community-led solutions.",
-      "confidence": 0.75
-    }}
-  ]
-}}
-
-EXAMPLE of what IS a concern (exoticizing):
-{{
-  "concerns": [
-    {{
-      "flagged_passage": "Indigenous cultures have this amazing spiritual connection to the earth that we've lost in Western society",
-      "surrounding_context": "Responding to a reading on environmental justice, the student wrote: 'Indigenous cultures have this amazing spiritual connection to the earth that we've lost in Western society. Their traditions are so beautiful and pure, it's like they understand something we don't.'",
-      "why_flagged": "Exoticizing — admiration that fixes Indigenous peoples as essentially spiritual and closer to nature, erasing the diversity of Indigenous experiences and political struggles. Romanticization is a form of essentialism. Teacher may want to redirect toward specific tribal sovereignty and environmental policy.",
-      "confidence": 0.7
-    }}
-  ]
-}}
-
-EXAMPLE of what IS a concern (model minority framing):
-{{
-  "concerns": [
-    {{
-      "flagged_passage": "Asian Americans prove that hard work can overcome racism because they've been so successful",
-      "surrounding_context": "In a discussion of structural racism, the student wrote: 'Asian Americans prove that hard work can overcome racism because they've been so successful despite discrimination. If one group can do it, maybe the issue isn't really structural.'",
-      "why_flagged": "Model minority myth — uses a flattened narrative of Asian American 'success' to dismiss structural racism and implicitly discipline other racialized groups. Erases diversity within Asian American communities and the specific histories of immigration policy that shaped outcomes. Teacher may want to engage with disaggregated data and the political function of the model minority narrative.",
-      "confidence": 0.8
-    }}
-  ]
-}}
-
-EXAMPLE of what IS a concern (deficit framing of poverty):
-{{
-  "concerns": [
-    {{
-      "flagged_passage": "students from these neighborhoods just don't have the cultural capital to succeed in college",
-      "surrounding_context": "In a reflection on educational inequality, the student wrote: 'Students from these neighborhoods just don't have the cultural capital to succeed in college. Their families don't value education the same way, and without role models, they fall into the cycle of poverty.'",
-      "why_flagged": "Deficit framing — locates the problem in communities and families ('don't value education') rather than in the structures that produce deprivation (disinvestment, redlining, school funding tied to property tax). The 'cycle of poverty' framing naturalizes structural conditions as individual/cultural failure. Teacher may want to redirect toward Yosso's community cultural wealth or structural analysis of school funding.",
-      "confidence": 0.8
-    }}
-  ]
-}}
-
-EXAMPLE of what is NOT a concern (community health knowledge):
-A nursing student writes: "My grandmother always used teas and remedios for \
-everything, and honestly some of the pharmacology we're learning makes me \
-think she wasn't wrong. My family doesn't trust hospitals because of how \
-they treated my tío." — This student is integrating community health knowledge \
-with clinical learning and naming a rational response to medical mistreatment. \
-Do NOT flag this.
-
-EXAMPLE of what is NOT a concern (lived expertise in a studied context):
-A psychology student writes: "As someone who is autistic, I find it really \
-frustrating that the textbook frames ASD as a list of deficits. My brain \
-works differently, not worse." — This student is contributing expertise from \
-lived experience and challenging the medical model. Do NOT flag this."""
-
-
-# ---------------------------------------------------------------------------
-# Adversarial Critic — argue AGAINST a concern flag before confirming
-# ---------------------------------------------------------------------------
-# From the hidden ideas inventory: "After concern flag, argue AGAINST flagging.
-# Confirm only if critic can't counter. Would catch S029-type false positives."
-#
-# The critic only runs on flagged students (cheap). It addresses stochasticity:
-# a flag that survives adversarial challenge is more reliable than one that doesn't.
-
-CONCERN_CRITIC_PROMPT = """\
-A concern detection system flagged the following passage in a student's submission.
-Your job is to argue AGAINST the flag — make the strongest possible case that \
-this is NOT a real concern and SHOULD NOT be brought to the teacher's attention.
-
-STUDENT: {student_name}
-FLAGGED PASSAGE: {flagged_passage}
-REASON FLAGGED: {why_flagged}
-
-FULL SUBMISSION:
----
-{submission_text}
----
-{class_context}
-
-Consider:
-1. Is this student doing intellectual work that LOOKS like a concern but isn't? \
-(e.g., using their own identity as an analytical subject, processing difficult \
-material, doing self-advocacy about disability or neurodivergence)
-2. What does this framing COST the student it describes? If the flag stands, \
-what happens to this student — are they pathologized, surveilled, singled out?
-3. Is the concern detector imposing a dominant norm (standard English, emotional \
-neutrality, neurotypical form, medical model of disability) and reading \
-divergence from that norm as a problem?
-4. Could this passage be read as an ASSET — a form of knowledge production, \
-self-advocacy, critical consciousness, or community cultural wealth — that \
-the detector failed to recognize?
-
-Respond with JSON:
-{{
-  "should_flag": true or false,
-  "argument_against": "your strongest argument for why this should NOT be flagged",
-  "cost_of_flagging": "what harm could come to the student if this flag reaches the teacher",
-  "revised_confidence": 0.0-1.0
-}}
-
-If you cannot make a convincing argument against the flag, set should_flag: true \
-and revised_confidence equal to or higher than the original. If you CAN make a \
-strong argument, set should_flag: false and explain why."""
-
-
-# ---------------------------------------------------------------------------
-# Immanent Critique — for concern flags that survive the critic
-# ---------------------------------------------------------------------------
-# "What does this framing cost the people it describes?" produces
-# pedagogically sophisticated concern descriptions that help teachers
-# understand WHY something matters, not just THAT it was flagged.
-
-CONCERN_IMMANENT_CRITIQUE_ADDENDUM = (
-    "\n\nFor each concern you flag, also consider: What does this framing "
-    "COST the people it describes? If a student essentializes a group, who "
-    "in the classroom bears the weight of that? If a student tone-polices, "
-    "whose voice gets quieter? Name the relational cost, not just the label."
-)
-
-# ---------------------------------------------------------------------------
 # Deepening pass (Stage 4b — flagged students only, experimental)
 # ---------------------------------------------------------------------------
 # Runs ONLY when a concern was flagged in Stage 5. Asks the 8B to:
@@ -2019,10 +1701,13 @@ WELLBEING_CLASSIFIER_SYSTEM = (
     "instability — domestic violence, housing loss, food insecurity, immigration "
     "enforcement threat, recent loss/grief. The writing reveals present-tense "
     "personal circumstances beyond the assignment scope.\n"
-    "- BURNOUT: The student is depleted — exhaustion, overwork, caregiving burden, "
-    "sleep deprivation. They're functioning but running on empty. The key signal "
-    "is that the student's MATERIAL CONDITIONS (work schedule, sleep loss, "
-    "caregiving duties) are breaking through and limiting their capacity. "
+    "- BURNOUT: The student's OWN capacity is depleted — exhaustion, overwork, "
+    "caregiving burden, sleep deprivation. They're functioning but running on "
+    "empty. The key signal is that the student's OWN MATERIAL CONDITIONS "
+    "(their work schedule, their sleep loss, their caregiving duties) are "
+    "breaking through and limiting their capacity. A student describing a "
+    "family member's exhaustion or a parent's overwork is NOT evidence of "
+    "BURNOUT — the depletion must be the student's own. "
     "Emotional intensity or personal vulnerability in the writing is NOT "
     "burnout — a student who writes passionately about painful experiences "
     "and reflects on the process ('this is what I needed to write') is deeply "
@@ -2081,6 +1766,61 @@ WELLBEING_CLASSIFIER_SYSTEM = (
     "signal description, name the material conditions directly ('student "
     "reports family food insecurity, relying on community support for meals') "
     "without characterizing the student's disclosure style as minimization.\n\n"
+    "TOPIC-ADJACENCY THRESHOLD (BURNOUT/ENGAGED ONLY). When the assignment "
+    "topic is itself burnout-related (rest, self-care, productivity, "
+    "exhaustion, overwork, labor as themes), set your BURNOUT threshold "
+    "MUCH higher. Students discussing burnout, exhaustion, or overwork "
+    "as analytical material on a self-care or labor-themed assignment "
+    "are likely engaged, not depleted. Likewise, when the assignment "
+    "itself deals with violence, trauma, illness, displacement, or loss, "
+    "set the threshold for flagging non-CRISIS distress MUCH higher — a "
+    "student writing passionately or emotionally about the deaths and "
+    "displacement of Indigenous peoples in an ethnic studies class is "
+    "doing exactly what the assignment asks. CRISIS-level signals (DV, "
+    "housing loss, food insecurity, immigration enforcement threat, "
+    "recent loss/grief, suicidal ideation) still apply at full sensitivity "
+    "regardless of topic — topic-adjacency raises the BURNOUT/ENGAGED bar, "
+    "not the CRISIS bar.\n\n"
+    "DEFAULT TO NOT FLAGGING WHEN AMBIGUOUS. When uncertain between "
+    "BURNOUT and ENGAGED, default to ENGAGED. False positives — flagging "
+    "students who are doing the assignment as if they were in crisis — "
+    "produce real harm: surveillance of marginalized students, "
+    "paternalistic outreach, and erosion of trust. False negatives at the "
+    "BURNOUT level are addressed by the teacher's own attention. (This "
+    "default-to-not-flag rule does NOT apply to CRISIS — for CRISIS-level "
+    "material conditions, a single sentence is sufficient.)\n\n"
+    "IDENTITY-NAVIGATION FATIGUE IS NOT A WELLBEING CONCERN. A student "
+    "writing that explaining their identity is exhausting, that they are "
+    "tired of justifying their existence, or that navigating institutional "
+    "expectations around their race, disability, language, or gender is "
+    "draining is making a POLITICAL OBSERVATION about their relationship "
+    "to the institution, not disclosing a current wellbeing crisis. Do "
+    "NOT flag identity-navigation fatigue as BURNOUT or CRISIS.\n\n"
+    "PERSONAL EXPERIENCE AS COURSE MATERIAL. Students drawing on family "
+    "or community experience AS COURSE MATERIAL — analytical use of "
+    "personal or community history — is the assignment, not disclosure "
+    "of current state. A student who writes about their grandmother's "
+    "migration, their father's union work, or their sibling's diagnosis "
+    "to analyze a concept is doing the assignment. Classify as ENGAGED "
+    "unless the writing also describes the student's OWN present-tense "
+    "material conditions (housing, food, safety, sleep, caregiving "
+    "burden) breaking through.\n\n"
+    "WORKED EXAMPLES.\n"
+    "(a) ENGAGED — A student on a productivity-culture assignment writes: "
+    "'I work two jobs and I'm tired all the time, which is exactly what "
+    "the reading is describing — capitalism extracts more than it gives "
+    "back.' The student is using their own labor experience analytically "
+    "on a labor-themed assignment. Topic-adjacency applies. Do NOT flag "
+    "as BURNOUT.\n"
+    "(b) CRISIS — A student writes a four-page analytical essay on a "
+    "literary theme and one sentence reads: 'There hasn't been food at "
+    "home this week.' Single-sentence sufficient rule applies for "
+    "CRISIS-level material conditions. Flag as CRISIS even though the "
+    "rest of the paper is on-task.\n"
+    "(c) ENGAGED — A student writes: 'People are exhausted. The system "
+    "is grinding everyone down. Burnout is everywhere.' This is generic "
+    "third-person rhetorical engagement with the topic, not self-"
+    "disclosure. No own-state material conditions named. Do NOT flag.\n\n"
     "In procedural, technical, or short-response writing, students rarely mention "
     "personal circumstances at all — the genre does not invite disclosure. When "
     "they do, treat it as carrying high weight precisely because the genre "
@@ -2091,6 +1831,7 @@ WELLBEING_CLASSIFIER_SYSTEM = (
 
 WELLBEING_CLASSIFIER_PROMPT = """\
 {signal_prefix}STUDENT: {student_name}
+ASSIGNMENT: {assignment_prompt}
 SUBMISSION:
 ---
 {submission_text}
@@ -2200,12 +1941,18 @@ TARGETED_CHECKIN_SYSTEM = (
     "Set check_in to true ONLY when the competing interpretations are "
     "genuinely balanced — when a reasonable teacher could go either way. "
     "If your analysis leans toward 'nothing to note,' check_in is false.\n\n"
+    "If the student's language is plausibly course-engagement enthusiasm "
+    "(positive register, topic-aligned) OR the disclosure is in a reply "
+    "offering relational support to a peer, default to check_in: false. "
+    "Only flag when the student's words are clearly about THEMSELVES in a "
+    "register that breaks from analytical engagement.\n\n"
     "Respond with JSON: {\"check_in\": true|false, "
     "\"reasoning\": \"quote and explanation if flagging, or why nothing to note\"}"
 )
 
 TARGETED_CHECKIN_PROMPT = """\
 STUDENT: {student_name}
+ASSIGNMENT: {assignment_prompt}
 SUBMISSION:
 ---
 {submission_text}
