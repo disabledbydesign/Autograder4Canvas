@@ -87,14 +87,14 @@ Between April 13 and May 10, two live-data runs completed (2026-04-27). Full fin
 | d3e2011c | 90005 (Biology fresh re-run) | **DONE** | Full pipeline re-run. |
 
 ### Active background tasks
-- **Full corpus wellbeing test** — RUNNING. See top of this log for details.
+- **None.** Full corpus wellbeing test is BLOCKED — see top of log. Reboot required.
 
 ### Test queue
 - **Test N replication (expanded corpus)**: DONE (2026-05-11). 20/22. See experiment log.
 - **Test P rerun**: DONE (2026-05-11). Major improvement. See experiment log.
 - **Test R**: DONE (2026-05-10). See experiment log.
 - **Test R2**: DONE (2026-05-11). 4/8 raw, 7/8 under threshold. S024 new FP. See experiment log.
-- **Full corpus wellbeing (Test R full)**: RUNNING (2026-05-11 evening).
+- **Full corpus wellbeing (Test R full)**: BLOCKED — reboot required. Script ready. See top of log.
 - **4-axis full corpus**: NOT YET RUN — queue after wellbeing completes.
 - **Genob full corpus**: NOT YET RUN — queue after 4-axis completes.
 - **Q4 trajectory validation**: NOT YET RUN.
@@ -128,13 +128,13 @@ Two targeted additions to `WELLBEING_CONCERN_PROMPT` based on S022 and S029 fail
 
 ### 2. Q4 trajectory report validation — NOT YET RUN
 
-Launch: `caffeinate -i python3 scripts/run_trajectory_tests.py --model gemma12b --reset-flags`
+Launch: `caffeinate -id python3 scripts/run_trajectory_tests.py --model gemma12b --reset-flags`
 
 Must `--reset-flags` — stale phase flags from prior runs. Compare T006 against Q3 baseline.
 
 ### 3. E016 replication (P4) — NOT YET RUN
 
-Launch: `caffeinate -i python3 scripts/run_equity_trajectory_tests.py --model gemma12b --run-id P4`
+Launch: `caffeinate -id python3 scripts/run_equity_trajectory_tests.py --model gemma12b --run-id P4`
 
 ### 4. Production gaps from live-data run (when ready)
 See `findings_from_live_data_run_2026-04-27.md` §1–4. Priority order:

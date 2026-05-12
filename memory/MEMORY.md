@@ -24,3 +24,4 @@ requests, python-dateutil, pytz, openpyxl, pandas
 
 ## Memories
 - [project_bootstrap_refactor](project_bootstrap_refactor.md) — bootstrap consolidation context
+- [MLX Metal Launch](mlx_metal_launch.md) — terminal required, caffeinate -id, killed-process hangover needs reboot, warmup pattern, checkpoint saves
