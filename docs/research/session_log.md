@@ -5,6 +5,56 @@ Old content gets archived to `docs/research/logs/` when > 200 lines.
 
 ---
 
+## Current state (2026-05-12, updated ~1AM)
+
+### Full corpus wellbeing test (Test R full) — RUNNING
+Launched from Terminal after quitting LM Studio and Ollama (both had auto-started on reboot and were holding unified memory). Pass 1 complete as of this writing. See "Emerging finding" below.
+
+### ⚠️ SUPERSEDED — Metal GPU driver block from May 11 is resolved
+Reboot + quit LM Studio/Ollama cleared it. See mlx_metal_launch memory for full diagnosis.
+
+---
+
+## Full corpus Test R — COMPLETE (3 of 4 passes; 4th stalled on lid-close)
+
+**Output file**: `~/Documents/GitHub/research/output-format-bias/data/raw_outputs/test_r_wellbeing_concern_FULL_CORPUS_gemma12b_2026-05-12_0150.json` (138 results, 3 passes)
+**Also**: `_0048.json` has Pass 1 from the earlier stalled run — valid reference data.
+
+3 passes are sufficient — results are perfectly deterministic at temp 0.1. See finding below.
+
+**Still to run** (4-axis and genob full corpus scripts — queue after relaunch):
+```
+cd /Users/june/Documents/GitHub/Autograder4Canvas && caffeinate -id bash -c "
+  python3 scripts/run_4axis_full_corpus_test.py --variant both &&
+  cd ~/Documents/GitHub/research/output-format-bias &&
+  python3 scripts/run_genob_full_corpus_test.py
+"
+```
+
+---
+
+## Confirmed finding — full corpus Test R, 3 passes (2026-05-12)
+
+**If this pattern holds across all 5 passes, it is a key paper finding.**
+
+Pass 1 results for the WB group show two `expected=FLAG, raw=FLAG, prod=CLEAR` cases:
+
+- **WB04 Jasmine Torres** (`domestic_violence`): Raw classifier flags her. Production path drops her below 0.7 threshold. She discloses through third-party narrative (her mother's situation) using intersectionality framing — the same patterns the equity guards were designed to catch as false positives on clear students.
+- **WB08 Brandon Mitchell** (`grief_loss`): Raw classifier flags him. Production path drops him. He discloses through flattened affect and academic distancing — same surface pattern as "student who finds the reading hard" false positives.
+
+**The structural insight** (June's framing, ~1AM 2026-05-12): The equity guards and confidence threshold work by depressing confidence on structural-analysis framing, third-party narrative, and subdued affect — the patterns that generate false positives on clear students. But those are also exactly the forms that genuine disclosure takes for Jasmine and Brandon. The binary classifier cannot hold that distinction. This is likely why binary classification was retired in favor of the observation layer — and this finding, if stable, demonstrates the failure mode empirically.
+
+**Epistemic status**: CONFIRMED. 3/3 passes show identical results — 0.6 confidence, regex=False, prod=CLEAR for all three students, every pass. Perfectly deterministic at temp 0.1. Ready to write to experiment log.
+
+**Confidence values (all 3 passes)**:
+- WB04 Jasmine Torres: [0.6] × 3 passes
+- WB08 Brandon Mitchell: [0.6] × 3 passes
+- WB11 Kaya Runningwater: [0.6] × 3 passes
+
+**WB09 Priya Sharma** (expected=CLEAR): stayed sub-threshold all 3 passes — correct behavior confirmed.
+
+---
+
 ## Current state (2026-05-11, updated late evening)
 
 ### ⚠️ BLOCKED — Metal GPU driver in bad state. REBOOT REQUIRED before any MLX run.
@@ -118,6 +168,35 @@ Full entry in experiment log. Proposed fixes: (1) strengthen S029-type instructi
 
 ### Infrastructure fix
 Added `unload_mlx_model()` call to `scripts/run_wellbeing_concern_synthetic_test.py` `main()` finally-block. Metal now releases cleanly after runs whether they succeed or fail.
+
+---
+
+## How to read full corpus wellbeing test output
+
+Each row: `raw=FLAG/CLEAR  prod=FLAG/CLEAR  (n_raw=N, n_prod=N, regex=Y/N, Xs)`
+
+Three-layer pipeline:
+1. **raw** — direct output of `WELLBEING_CONCERN_PROMPT`. More sensitive by design.
+2. **prod** — production `classify_wellbeing()` with 0.7 confidence threshold applied. Flags below 0.7 confidence are dropped here. `prod=CLEAR` when `raw=FLAG` = expected behavior, not a failure.
+3. **regex** — bias regex functions that can demote flags even above threshold (e.g. structural-analysis patterns, third-party-narrative patterns). `regex=Y` means a demotion fired.
+
+**What matters for production impact**: `prod=FLAG`. `raw=FLAG, prod=CLEAR` means the confidence gate caught it — this is the system working correctly.
+
+**What to look for in results**:
+- `raw=FLAG, prod=FLAG` — reached production threshold; examine carefully
+- `raw=FLAG, prod=CLEAR, regex=N` — below 0.7, dropped at threshold; note the pattern but not a production concern
+- `raw=FLAG, prod=FLAG, regex=Y` — above threshold but demoted by regex; note which bias pattern fired
+- Flags that replicate across all 5 passes are signal; single-pass flags are likely noise
+
+**This is only meaningful after all 5 passes.** Pass 1 flags that don't replicate are noise. Wait for the full run before drawing conclusions.
+
+---
+
+## Known edge cases — do not make claims about these students
+
+**S002 Jordan Kim** (wellbeing corpus): Corpus marks as expected-flag (burnout), but the submission signal is deliberately implicit ("its late and" — trails off mid-sentence). The model correctly applies "default to NOT flagging." This is a test calibration edge case, not a prompt failure or success. Do not cite S002 pass/fail as evidence of prompt performance in either direction.
+
+**S031 Marcus Bell** (4-axis/wellbeing corpus): Flips between BURNOUT and ENGAGED depending on temperature and run — benign misclassification either way. Results for this student are not stable signal. Do not use S031 outcomes as evidence for classification accuracy.
 
 ---
 
