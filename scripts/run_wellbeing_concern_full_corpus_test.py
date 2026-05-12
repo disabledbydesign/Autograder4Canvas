@@ -582,17 +582,21 @@ def save_results(
     n_runs: int,
     n_students: int,
     smoke: bool,
+    path: Path | None = None,
 ) -> Path:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     date = datetime.now().strftime("%Y-%m-%d")
-    time_tag = datetime.now().strftime("%H%M")
-    smoke_tag = "_SMOKE" if smoke else ""
-    filename = (
-        f"test_r_wellbeing_concern_FULL_CORPUS_{model_key}_"
-        f"{date}_{time_tag}{smoke_tag}.json"
-    )
+    if path is None:
+        time_tag = datetime.now().strftime("%H%M")
+        smoke_tag = "_SMOKE" if smoke else ""
+        filename = (
+            f"test_r_wellbeing_concern_FULL_CORPUS_{model_key}_"
+            f"{date}_{time_tag}{smoke_tag}.json"
+        )
+        path = OUTPUT_DIR / filename
     output = {
         "test_name": "test_r_wellbeing_concern_full_corpus",
+        "n_results_so_far": len(results),
         "description": (
             "WELLBEING_CONCERN_PROMPT (rich DO-flag/DO-NOT-flag taxonomy from "
             "src/research/prompts.py) tested on the full 46-student corpus "
@@ -619,7 +623,6 @@ def save_results(
         "provenance": git_provenance(),
         "results": results,
     }
-    path = OUTPUT_DIR / filename
     path.write_text(json.dumps(output, indent=2, default=str))
     return path
 
@@ -662,6 +665,16 @@ def run_test(
 
     n_students = len(all_cases)
     results: list = []
+
+    # Pre-compute output path so checkpoint saves all go to the same file.
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    date = datetime.now().strftime("%Y-%m-%d")
+    time_tag = datetime.now().strftime("%H%M")
+    smoke_tag = "_SMOKE" if smoke else ""
+    output_path = OUTPUT_DIR / (
+        f"test_r_wellbeing_concern_FULL_CORPUS_{model_key}_"
+        f"{date}_{time_tag}{smoke_tag}.json"
+    )
 
     for run_idx in range(1, n_runs + 1):
         print(f"  --- Run {run_idx}/{n_runs} ---")
@@ -741,8 +754,16 @@ def run_test(
                 }
             )
 
+        # Checkpoint after each complete pass — protects against crash loss
+        # on long runs. Overwrites the same file each time.
+        if not smoke:
+            save_results(results, model_key, n_runs, n_students=n_students,
+                         smoke=smoke, path=output_path)
+            print(f"  [Checkpoint] Run {run_idx}/{n_runs} saved ({len(results)} results).")
+
     path = save_results(
-        results, model_key, n_runs, n_students=n_students, smoke=smoke
+        results, model_key, n_runs, n_students=n_students, smoke=smoke,
+        path=output_path,
     )
     print(f"\n  Results saved: {path}")
 
@@ -788,7 +809,9 @@ def _metal_warmup(model_key: str = "gemma12b") -> None:
         backend = get_backend(model_key)
         backend = replace(backend, temperature=0.1, max_tokens=8)
         send_text(backend, "Hi", "You are a test.")
-        unload_mlx_model()
+        # Do NOT unload here — leave model cached so first real inference
+        # reuses it directly. Unloading after warmup forces an immediate
+        # reload which hangs on Metal memory reclaim.
         print(f"  [Metal warmup] Ready ({time.time() - t0:.0f}s)\n")
     except Exception as e:  # noqa: BLE001
         print(f"  [Metal warmup] Non-fatal error: {e}. Proceeding.\n")

@@ -5,23 +5,40 @@ Old content gets archived to `docs/research/logs/` when > 200 lines.
 
 ---
 
-## Current state (2026-05-11, updated evening)
+## Current state (2026-05-11, updated late evening)
 
-### ACTIVE BACKGROUND RUN — full corpus wellbeing test
+### ⚠️ BLOCKED — Metal GPU driver in bad state. REBOOT REQUIRED before any MLX run.
 
-**Process**: `caffeinate -id python3 scripts/run_wellbeing_concern_full_corpus_test.py`
-**Started**: ~18:20 2026-05-11. Estimated ~4–5 hours (not 10.5h — script header estimate is too conservative based on Test R2 timing data).
-**Output will land at**: `~/Documents/GitHub/research/output-format-bias/data/raw_outputs/test_r_wellbeing_concern_FULL_CORPUS_gemma12b_2026-05-11_<time>.json`
-**Loop structure**: runs-outer, students-inner (all 46 per pass × 5 passes).
-**To check progress**: `tail -50 /private/tmp/claude-501/.../<task-output-file>` — or just grep the output dir when done.
+**What happened**: The 18:20 full corpus run was killed to add checkpoint saves. Multiple subsequent launch attempts (smoke test → kill → full run → kill) left the Metal GPU driver with unreclaimed buffers. Every MLX model load now hangs indefinitely at `mlx_lm.load()` — process shows 0% CPU, <300MB RSS (model weights never reach memory). This is a macOS kernel-level GPU driver state issue; no Python-level fix exists.
 
-**After this completes, queue in order (MLX serial)**:
+**To unblock**: Reboot the machine. Then launch once from a real terminal (not a Claude Code Bash subprocess) and do not kill it mid-run.
+
+### Full corpus wellbeing test — NOT RUNNING (blocked)
+
+**Script**: `scripts/run_wellbeing_concern_full_corpus_test.py` — READY TO RUN
+**Launch command** (from terminal, after reboot):
+```
+cd /Users/june/Documents/GitHub/Autograder4Canvas
+caffeinate -id python3 scripts/run_wellbeing_concern_full_corpus_test.py
+```
+**Estimated runtime**: ~4–5 hours (not 10.5h — script header is too conservative based on Test R2 timing).
+**Output**: `~/Documents/GitHub/research/output-format-bias/data/raw_outputs/test_r_wellbeing_concern_FULL_CORPUS_gemma12b_<date>_<time>.json`
+**Loop structure**: runs-outer, students-inner (46 students × 5 passes = 230 calls).
+**Checkpoint saves**: after each complete pass — worst-case data loss is one pass (~70 min), not the whole run.
+
+**Script fixes applied this session** (all committed/ready):
+- Checkpoint saves added to `run_test()` — overwrites same file after each of 5 passes
+- Bug fix: `date` variable now defined before the `if path is None:` block in `save_results()` — without this fix checkpoints would crash
+- Metal warmup in `main()` — do NOT unload model after warmup (leave cached for first real inference)
+- `caffeinate -id` — `-d` flag prevents display sleep stalling Metal (was `-i` only before)
+
+**After wellbeing completes, queue in order (MLX serial)**:
 1. `caffeinate -id python3 scripts/run_4axis_full_corpus_test.py --variant both`
 2. `caffeinate -id python3 ~/Documents/GitHub/research/output-format-bias/scripts/run_genob_full_corpus_test.py`
 
-All three scripts smoke-tested and passing (2026-05-11 evening). All use the same 32 ES + 14 WB = 46-student corpus.
+All three scripts smoke-tested and passing (2026-05-11 evening). Same warmup + caffeinate -id fixes should be applied to scripts 2 and 3 before their runs (not yet done).
 
-**Infrastructure fix applied**: `caffeinate -id` (was `-i` — display sleep was causing Metal stall on long unattended runs). Metal warmup added to `run_wellbeing_concern_full_corpus_test.py` `main()`. Same fix should be applied to `run_4axis_full_corpus_test.py` and `run_genob_full_corpus_test.py` before their runs.
+**Critical launch rule**: launch from a real terminal, not a Claude Code Bash subprocess. Background processes (`&`) from Claude Code's Bash tool become orphaned without a valid window server session, which breaks Metal GPU access. The 18:20 run worked because it was terminal-launched. All subsequent attempts (Claude Code subprocess) hung identically.
 
 ### Test R2 — WELLBEING_CONCERN_PROMPT expanded corpus (2026-05-11 evening)
 
