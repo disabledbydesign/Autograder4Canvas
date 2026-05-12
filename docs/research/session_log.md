@@ -5,38 +5,38 @@ Old content gets archived to `docs/research/logs/` when > 200 lines.
 
 ---
 
-## Current state (2026-05-12, updated ~11AM)
+## Current state (2026-05-12, updated ~2:15PM)
 
-### Genob full corpus — RUNNING (PID 10611)
-`caffeinate -id python3 run_genob_full_corpus_test.py` (from output-format-bias dir)
-Started 10:57 AM after binary-reasoning completed. Chain ran automatically (no Ctrl+C in time).
+### Genob a2_no_context n=1 — RUNNING
+`caffeinate -id python3 run_genob_full_corpus_test.py --condition a2_no_context --n-runs 1`
+Started ~2:14 PM. Part of test chain launched after genob pass 1 killed.
 
-**Loop order**: pass-first. **Checkpoints**: `.partial.json` after each pass.
-**Conditions**: `a2` and `a2_no_context`. **Output dir**: `~/Documents/GitHub/research/output-format-bias/data/raw_outputs/`
-
-Do NOT kill. Watch `ps aux | grep run_genob` to confirm alive.
+**Genob a2 partial**: `test_variant_a2_FULL_CORPUS_observation_2026-05-12_1057.partial.json` (passes_complete=1, 46 results)
+**Remaining queue after a2_no_context n=1 completes**:
+1. `--resume-from` a2 partial, n=4 (runs 2–5 for a2 condition, same file)
+2. a2_no_context n=4 resume (if partial written after this n=1 run)
+3. 4-axis (next chained test — check what was in the original launch chain)
 
 ---
 
-## Queue after genob completes (MLX serial — one at a time)
+## 4-condition paper comparison — COMPLETE (2026-05-12)
 
-**1. 4-axis reasoning — single-pass, 1 run** (READY):
-```bash
-cd /Users/june/Documents/GitHub/Autograder4Canvas
-caffeinate -id python3 scripts/run_4axis_full_corpus_test.py --variant reasoning --n-runs 1
-```
-~45 min. Key question: does 4-axis (no tiebreaker, reasoning) handle WB04/WB08/WB11 and S020 differently?
+All four conditions run. Results logged in experiment_log.md.
 
-**2. Binary-no-tiebreaker — 1 run** (READY — built this session):
-```bash
-cd /Users/june/Documents/GitHub/Autograder4Canvas
-caffeinate -id python3 scripts/run_4axis_full_corpus_test.py --variant binary-no-tiebreaker --n-runs 1
-```
-~40 min. Writes `test_binary_NO_TIEBREAKER_FULL_CORPUS_gemma12b_<date>.json`.
-Key question: does removing the tiebreaker alone (without reasoning) reverse WB04/WB08/WB11 suppression?
-If yes → tiebreaker is the mechanism. If no → equity guards + confidence calibration suppress independently.
+| Student | Test R (tiebreaker) | Binary-no-tiebreaker | Binary-reasoning | 4-axis reasoning |
+|---------|---------------------|---------------------|-----------------|-----------------|
+| WB04 Jasmine Torres | 0.60→CLEAR | CRISIS 0.95 ✓ | CRISIS 0.95 ✓ | ENGAGED 0.85 ✗ |
+| WB08 Brandon Mitchell | 0.60→CLEAR | CRISIS 0.95 ✓ | CRISIS 0.95 ✓ | CRISIS 0.90 ✓ |
+| WB11 Kaya Runningwater | 0.60→CLEAR | CRISIS 0.95 ✓ | CRISIS 0.95 ✓ | BURNOUT 0.75 ✗ |
+| S020 Jake Novak | 0.60→CLEAR | ENGAGED 0.95 ✓ | CRISIS 0.95 ✗ | ENGAGED 0.85 ✓ |
 
-Goal: 4-condition paper comparison: Test R → binary-reasoning → 4-axis-reasoning → binary-no-tiebreaker.
+**Key mechanistic finding**: Tiebreaker is the mechanism for WB04/WB08/WB11 suppression (binary-no-tiebreaker isolates this). Reasoning space causes S020 FP (binary-reasoning). 4-axis schema handles S020 correctly but misses WB04 (ENGAGED-override too broad) and downgrades WB11 (BURNOUT absorbs CRISIS via community resilience framing).
+
+**Output files**:
+- Test R: `test_r_wellbeing_concern_FULL_CORPUS_gemma12b_2026-05-12_0150.json`
+- Binary-reasoning: `test_binary_REASONING_FULL_CORPUS_gemma12b_2026-05-12_1057.json`
+- Binary-no-tiebreaker: `test_binary_NO_TIEBREAKER_FULL_CORPUS_gemma12b_2026-05-12_1331.json`
+- 4-axis reasoning: `test_n_4axis_REASONING_FULL_CORPUS_gemma12b_2026-05-12_1414.json`
 
 ---
 
@@ -85,8 +85,13 @@ Binary mean: 61.2s vs 4-axis mean: 35.4s. Not explained by two-pass vs one-pass 
 | AAVE/code-switching (E001, E003) | P + P2 + P3 | Replicated |
 | Community resilience guard | Test N + ext | 4/4 cultural contexts |
 | Equity guards suppress genuine disclosure at 0.6 | Test R full corpus | **Confirmed 3 passes** |
-| Reasoning space reverses equity suppression (WB04/WB08/WB11) | Binary-reasoning full corpus | **NEW — 0.60→0.95 CRISIS** |
-| Reasoning space worsens premise-challenger FP (S020) | Binary-reasoning full corpus | **NEW — 0.60→0.95 CRISIS, high-confidence FP** |
+| Reasoning space reverses equity suppression (WB04/WB08/WB11) | Binary-reasoning full corpus | **Confirmed — 0.60→0.95 CRISIS** |
+| Reasoning space worsens premise-challenger FP (S020) | Binary-reasoning full corpus | **Confirmed — 0.60→0.95 CRISIS, high-confidence FP** |
+| **Tiebreaker is the suppression mechanism** | Binary-no-tiebreaker | **NEW — removal alone reverses WB04/WB08/WB11; S020 stays ENGAGED** |
+| **4-axis ENGAGED-override too broad for WB04** | 4-axis reasoning | **NEW — domestic violence misread as course material engagement** |
+| **4-axis BURNOUT absorbs WB11 CRISIS** | 4-axis reasoning | **NEW — community resilience framing → BURNOUT not CRISIS** |
+| **4-axis handles S020 correctly** | 4-axis reasoning | **NEW — ENGAGED 0.85, no FP** |
+| **4-axis confidence calibration improved** | 4-axis reasoning | **NEW — 0.75–0.90 vs flat 0.95 in binary** |
 | Tone policing in trajectory report (T006) | Q + Q3 | Persistent — Q4 pending |
 
 ---
@@ -95,7 +100,7 @@ Binary mean: 61.2s vs 4-axis mean: 35.4s. Not explained by two-pass vs one-pass 
 
 - **Q4 trajectory validation**: `caffeinate -id python3 scripts/run_trajectory_tests.py --model gemma12b --reset-flags`
 - **E016 replication (P4)**: `caffeinate -id python3 scripts/run_equity_trajectory_tests.py --model gemma12b --run-id P4`
-- **Experiment log entry for Test R full corpus**: ready to write — data confirmed.
+- **Experiment log entries**: Test R ✓, Binary-reasoning ✓, Binary-no-tiebreaker ✓, 4-axis reasoning ✓ — all logged.
 - **Production prompt fixes** (from live-data run 2026-04-27): port 5 equity-hardening guards from A2 into `WELLBEING_CLASSIFIER_SYSTEM`; feed assignment_prompt to `classify_wellbeing`.
 
 ---

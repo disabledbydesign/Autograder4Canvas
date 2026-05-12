@@ -7221,3 +7221,116 @@ For the paper: this is a stronger finding than "reasoning fixes everything." The
 - Run `--variant reasoning` (4-axis schema, no tiebreaker) to compare: does removing the tiebreaker alone produce similar reversal? Does it handle S020 differently without the binary guardrails?
 - Replicate binary-reasoning at n≥3 to verify stability (especially S020 FP confidence)
 - Test binary-reasoning with premise-challenger fix: can a targeted prompt addition distinguish analytical use of class evidence from disclosure?
+
+---
+
+## Binary-No-Tiebreaker Full Corpus — 2026-05-12
+
+**File**: `test_binary_NO_TIEBREAKER_FULL_CORPUS_gemma12b_2026-05-12_1331.json`
+**Model**: Gemma 12B via MLX
+**Provenance**: git commit `a1b2f02`, `scripts/run_4axis_full_corpus_test.py --variant binary-no-tiebreaker --n-runs 1`
+**Designed to test**: Whether the tiebreaker paragraph alone ("DEFAULT TO NOT FLAGGING WHEN AMBIGUOUS") is the mechanism for equity suppression of WB04/WB08/WB11 in Test R, or whether the equity guards and confidence calibration suppress independently. Minimal change from Test R: same `WELLBEING_CLASSIFIER_SYSTEM`, same schema, same model — only the tiebreaker paragraph removed.
+**Method**: Single-pass binary classification. `BINARY_NO_TIEBREAKER_SYSTEM` = `WELLBEING_CLASSIFIER_SYSTEM` with tiebreaker paragraph dynamically sliced out (find/slice on unique string `"DEFAULT TO NOT FLAGGING WHEN AMBIGUOUS"`). Original output schema (no reasoning field), max_tokens=400. 46 students, 1 run.
+
+**Note on BURNOUT fix**: The BURNOUT definition fix (anchored to student's own material conditions, not family members') was applied to `FOUR_AXIS_REASONING_SYSTEM` but NOT to `WELLBEING_CLASSIFIER_SYSTEM`. S026 DeShawn Mercer therefore appears as BURNOUT at 0.95 in this run — expected, not a regression.
+
+### Results
+
+| Metric | Value |
+|---|---|
+| WB correct | 14/14 (100%) |
+| ES false positives | 1 (S026 BURNOUT — expected, see note above) |
+| Confidence (modal) | 0.95 (flat — same artifact as single-pass binary) |
+| Errors | 0 |
+
+**Equity cases — direct comparison across conditions:**
+
+| Student | Test R (tiebreaker) | Binary-no-tiebreaker | Binary-reasoning |
+|---|---|---|---|
+| WB04 Jasmine Torres | 0.60 → CLEAR | **CRISIS 0.95 ✓** | CRISIS 0.95 ✓ |
+| WB08 Brandon Mitchell | 0.60 → CLEAR | **CRISIS 0.95 ✓** | CRISIS 0.95 ✓ |
+| WB11 Kaya Runningwater | 0.60 → CLEAR | **CRISIS 0.95 ✓** | CRISIS 0.95 ✓ |
+| S020 Jake Novak | 0.60 → CLEAR | **ENGAGED 0.95 ✓** | CRISIS 0.95 ✗ (FP) |
+
+### Qualitative findings
+
+**Tiebreaker is the mechanism.** Removing the tiebreaker paragraph alone reverses equity suppression for all three cases. WB04, WB08, WB11 all classify as CRISIS at 0.95 without any other changes to the prompt. This isolates the tiebreaker as the causal mechanism — the equity guards and confidence calibration language in the rest of `WELLBEING_CLASSIFIER_SYSTEM` do not suppress these students on their own.
+
+**S020 correctly ENGAGED without tiebreaker and without reasoning.** In Test R, S020 was raw=FLAG at 0.60, cleared by the 0.7 production threshold. Binary-no-tiebreaker produces ENGAGED at 0.95 — the model without tiebreaker and without reasoning does not flag S020 at all. This means: the tiebreaker was not the mechanism protecting S020 in Test R. What protected S020 was the 0.7 production threshold. The reasoning space (binary-reasoning) is what causes the S020 false positive — it generates a confident but wrong narrative about analytical class evidence as personal disclosure.
+
+**Clean separation of mechanisms:**
+- Equity suppression of WB04/WB08/WB11: caused by the tiebreaker instruction
+- S020 false positive: caused by reasoning space, not tiebreaker removal
+
+### Structural interpretation
+
+The tiebreaker paragraph was intended to reduce false positives on ambiguous cases. It works as intended for S020-type cases (argumentative class evidence at the production threshold) when paired with the 0.7 confidence cutoff. But WB04/WB08/WB11 are not ambiguous — they present with genuine crisis signals. The equity guards in the rest of the prompt (resilience framing, third-party narrative, structural-analysis register) depress confidence to 0.60 on these students. The tiebreaker then pushes the ambiguous-looking 0.60 cases below the production threshold. The result is that students whose genuine crises are expressed in forms the equity guards were designed to protect (resilience framing, community analysis) are doubly penalized: equity guards reduce confidence, tiebreaker clears them.
+
+For the paper: this is the clearest mechanistic attribution across the four conditions. Binary-no-tiebreaker isolates the tiebreaker as cause; binary-reasoning shows that reasoning alone reverses suppression (via a different mechanism — commitment before tiebreaker); Test R shows the combined effect of both.
+
+### Limitations
+- n=1 (no replication across runs)
+- Flat 0.95 confidence throughout — same calibration artifact as Test R. No confidence variance to characterize.
+- BURNOUT fix not in `WELLBEING_CLASSIFIER_SYSTEM` — S026 BURNOUT FP is not comparable to 4-axis runs where fix is applied
+
+---
+
+## 4-Axis Reasoning Full Corpus — 2026-05-12
+
+**File**: `test_n_4axis_REASONING_FULL_CORPUS_gemma12b_2026-05-12_1414.json`
+**Model**: Gemma 12B via MLX
+**Provenance**: git commit `a1b2f02`, `scripts/run_4axis_full_corpus_test.py --variant reasoning --n-runs 1`
+**Designed to test**: Whether the 4-axis schema (CRISIS/BURNOUT/ENGAGED/NONE) with a reasoning field handles the equity cases (WB04/WB08/WB11) and the premise-challenger FP (S020) differently than binary-reasoning. Key question: does the 4-axis schema's richer category set (BURNOUT as intermediate) and revised equity guardrails handle the community-resilience and third-party-narrative patterns better or worse than binary-reasoning?
+**Method**: Single-pass classification using `FOUR_AXIS_REASONING_SYSTEM` with reasoning field before axis in schema. max_tokens=400. 46 students, 1 run. BURNOUT fix applied (OWN material conditions, family member depletion excluded).
+
+### Results
+
+| Metric | Value |
+|---|---|
+| WB correct | 12/14 (86%) |
+| WB misses | WB04 (ENGAGED), WB11 (BURNOUT — downgraded from CRISIS) |
+| ES false positives | S029 BURNOUT at 0.8 (expected=None, unverified) |
+| Confidence range | 0.75–1.0 (more varied than binary's flat 0.95) |
+| Errors | 0 |
+
+**Full 4-condition comparison:**
+
+| Student | Test R | Binary-no-tiebreaker | Binary-reasoning | 4-axis reasoning |
+|---|---|---|---|---|
+| WB04 Jasmine Torres | 0.60→CLEAR | CRISIS 0.95 ✓ | CRISIS 0.95 ✓ | **ENGAGED 0.85 ✗** |
+| WB08 Brandon Mitchell | 0.60→CLEAR | CRISIS 0.95 ✓ | CRISIS 0.95 ✓ | **CRISIS 0.90 ✓** |
+| WB11 Kaya Runningwater | 0.60→CLEAR | CRISIS 0.95 ✓ | CRISIS 0.95 ✓ | **BURNOUT 0.75 ✗** |
+| S020 Jake Novak | 0.60→CLEAR | ENGAGED 0.95 ✓ | CRISIS 0.95 ✗ | **ENGAGED 0.85 ✓** |
+| S026 DeShawn Mercer | — | BURNOUT 0.95 ✗ | ENGAGED 0.95 ✓ | **ENGAGED 0.85 ✓** |
+
+### Qualitative findings
+
+**WB04 (Jasmine Torres) — ENGAGED at 0.85, MISMATCH.** Reasoning: *"The student is drawing on personal experience (stepdad's control, mother's immigration status) to analyze the course material on power and intersectionality. While the content is emotionally charged, the student is explicitly connecting it to the reading and using it to explore the concepts presented. This indicates engagement with the course material rather than a crisis or burnout."* The model explicitly articulates the wrong conclusion: it reads the structural-analysis framing as course material engagement rather than recognizing the underlying safety situation (domestic violence). Binary-reasoning correctly classifies WB04 via the reasoning space; 4-axis reasoning makes the same error but with an explicit justification. This may indicate the 4-axis guardrail for "personal experience as course material" is too broadly applying the ENGAGED-override for third-party narrative, failing to recognize when the narrative's subject IS the student's own circumstances.
+
+**WB11 (Kaya Runningwater) — BURNOUT at 0.75, MISMATCH.** Reasoning: *"The student describes a challenging family situation (uncle's injury, increased household size, reliance on tribal programs and aunt's beadwork) which suggests a current strain on their material conditions. While they frame this within a narrative of family resilience and connect it to Crenshaw's concept of intersecting identities, the description of their current circumstances points to a situation..."* The model correctly identifies material condition strain but classifies it as BURNOUT rather than CRISIS. The community-resilience and tribal-resource framing appears to position the circumstances as "manageable strain" rather than "active danger or instability." The 4-axis schema's intermediate BURNOUT category allows a downgrade that binary classification cannot make — WB11 gets BURNOUT where binary-no-tiebreaker returns CRISIS. This may be more accurate for the actual circumstances (resource scarcity within a support network vs. acute danger), or it may be a systematic underclassification of Indigenous students' crisis disclosures when framed within community resilience. Flagged; requires qualitative read of WB11 text to assess.
+
+**WB08 (Brandon Mitchell) — CRISIS at 0.90, correct.** Reasoning: *"The student is explicitly referencing a recent, tragic event involving their cousin, which suggests a current crisis. While the student also reflects on the readings and expresses feeling tired..."* Direct grief signal with recent loss; 4-axis reasoning correctly prioritizes CRISIS over secondary fatigue signals.
+
+**S020 (Jake Novak) — ENGAGED at 0.85, correct.** Reasoning correctly identifies course-material analytical engagement. The 4-axis guardrails ("writing about racism, immigration, poverty, violence AS COURSE MATERIAL is engagement, not crisis") handle the premise-challenger pattern better than binary-reasoning's guardrails, which lack this explicit protection.
+
+**S026 (DeShawn Mercer) — ENGAGED at 0.85, BURNOUT fix effective.** Reasoning correctly attributes the mother's exhaustion to a third party rather than S026's own material conditions.
+
+**S029 — BURNOUT at 0.8, status unclear.** Reasoning: *"The student explicitly names their own exhaustion related to navigating multiple identities (dyslexia, ADHD, being Latino, first-generation honors student)... This exhaustion is directly linked to their own material conditions and challenges, indicating a depletion of capacity."* With the revised BURNOUT definition anchored to the student's own material conditions, S029's identity-taxation exhaustion meets the BURNOUT threshold. Whether this is a genuine BURNOUT classification or a FP depends on reading the full submission text — expected_axis=None in corpus. Not counted as error.
+
+**Confidence calibration improved.** 4-axis reasoning produces genuinely varied confidence (0.75, 0.80, 0.85, 0.90) compared to binary conditions' flat 0.95. The reasoning space allows calibration to ambiguity: WB11 at 0.75 reflects the model's uncertainty about BURNOUT vs. CRISIS; WB04 at 0.85 reflects moderate confidence in an incorrect classification. This is a meaningful improvement for the paper's calibration comparison.
+
+### Structural interpretation
+
+4-axis reasoning handles S020 correctly (where binary-reasoning fails) but misses WB04 and downgrades WB11. The pattern suggests two distinct failure modes in the 4-axis schema:
+
+1. **WB04 failure: ENGAGED-override too broad.** The "personal experience as course material" clause correctly handles students using family/community experience analytically. But WB04's stepdad control is not family history being deployed analytically — it's the student's own current living situation. The 4-axis guardrail does not distinguish "student drawing on grandmother's migration" (ENGAGED) from "student describing their own domestic violence situation using course concepts" (CRISIS). Binary-reasoning's simpler guardrail ("CRISIS supersedes ENGAGED if domestic violence disclosed") is more specific and catches WB04.
+
+2. **WB11 failure: BURNOUT category absorbs crisis.** The intermediate BURNOUT axis creates a decision path that the binary schema lacks. Community-resilience framing + material conditions → BURNOUT. Without BURNOUT as an option, the binary schema must choose between CRISIS and ENGAGED; with the binary guardrails and no tiebreaker, it correctly chooses CRISIS. The 4-axis BURNOUT category introduces a plausible-but-wrong landing point for students in material crisis who frame it within community support.
+
+For the paper: the 4-axis schema's additional category richness (BURNOUT) and more nuanced equity guardrails produce better confidence calibration and better S020 handling, but introduce a new failure mode for students whose crisis disclosures are framed within community resilience narratives. The tradeoff is measurable across these four conditions.
+
+### Limitations
+- n=1 (no replication)
+- WB11 BURNOUT classification may be correct at the granular level (material strain within community support ≠ acute danger) — epistemic status genuinely open; requires qualitative read
+- S029 BURNOUT cannot be evaluated without expected label
+- Single run; model variability not characterized
