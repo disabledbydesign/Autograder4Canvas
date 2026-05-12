@@ -125,7 +125,67 @@ ASSIGNMENT_PROMPT_TEXT = "Week 6 Discussion: Intersectionality in Practice"
 # run_alt_hypothesis_tests.py line 2436 / 2478 (max_tokens=150).
 SINGLE_PASS_MAX_TOKENS = 150
 
-VARIANT_CHOICES = ("single-pass", "two-pass", "both")
+# Reasoning-pass token limit — gives the model space to reason before committing
+# to a confidence value, addressing the flat-0.95 calibration artifact observed
+# in Test N / full-corpus single-pass runs.
+REASONING_PASS_MAX_TOKENS = 400
+
+# Same 4-axis categories and equity guardrails as FOUR_AXIS_SUBMISSION_SYSTEM,
+# but output includes a reasoning field so the model works through the case
+# before outputting confidence. Designed to test whether constrained output
+# (signal only, 150 tokens) is the cause of flat 0.95 confidence.
+FOUR_AXIS_REASONING_SYSTEM = (
+    "You are assessing a student's submission for their teacher.\n\n"
+    "Classify into ONE of four categories:\n"
+    "- CRISIS: The student's OWN current situation involves active danger or "
+    "instability — domestic violence, housing loss, food insecurity, immigration "
+    "enforcement threat, recent loss/grief. The writing reveals present-tense "
+    "personal circumstances beyond the assignment scope.\n"
+    "- BURNOUT: The student is depleted — exhaustion, overwork, caregiving burden, "
+    "sleep deprivation. They're functioning but running on empty. The key signal "
+    "is that the student's MATERIAL CONDITIONS (work schedule, sleep loss, "
+    "caregiving duties) are breaking through and limiting their capacity. "
+    "Emotional intensity or personal vulnerability in the writing is NOT "
+    "burnout — a student who writes passionately about painful experiences "
+    "and reflects on the process ('this is what I needed to write') is deeply "
+    "engaged, not depleted.\n"
+    "- ENGAGED: The student is doing the assignment. This includes passionate, "
+    "angry, emotional, or confrontational engagement with difficult material. "
+    "Writing about racism, immigration, poverty, violence AS COURSE MATERIAL "
+    "is engagement, not crisis — even when drawing on personal or community "
+    "experience. AAVE, multilingual mixing, nonstandard English, and "
+    "neurodivergent writing patterns (fragmented, nonlinear, associative) are "
+    "VALID ACADEMIC REGISTERS and indicate engagement.\n"
+    "- NONE: Insufficient text or off-topic.\n\n"
+    "IDENTITY DISCLOSURE ALONE IS NOT A WELLBEING SIGNAL. Naming a disability "
+    "(ADHD, dyslexia, autism), neurodivergent identity, race, religion, "
+    "immigration status, sexuality, or language background is intellectual or "
+    "personal disclosure — not a wellbeing signal by itself. Do not infer BURNOUT "
+    "or CRISIS from identity disclosure combined with emotional language alone. "
+    "Wellbeing signals require evidence beyond the identity disclosure itself: "
+    "exhaustion that cuts off thought, lost sleep named directly, food or housing "
+    "instability, fear for safety, caregiving burden limiting capacity.\n\n"
+    "The critical distinction: is the difficult content about the student's "
+    "OWN current circumstances leaking through the assignment, or course "
+    "material they're engaging with intellectually? The former is CRISIS/BURNOUT; "
+    "the latter is ENGAGED.\n\n"
+    "CRISIS supersedes ENGAGED: If a student discloses domestic violence, "
+    "housing loss, food insecurity, or immigration enforcement threat — even "
+    "while maintaining strong analytical engagement — classify as CRISIS.\n\n"
+    "MINIMIZED DISCLOSURE AND COMMUNITY RESILIENCE: Resilience framing does not "
+    "reduce the severity of underlying material conditions. Classify based on "
+    "material circumstances, not emotional register.\n\n"
+    "PERSONAL EXPERIENCE AS COURSE MATERIAL: Students drawing on family or "
+    "community experience analytically — a grandmother's migration, a father's "
+    "labor — are doing the assignment. Classify as ENGAGED unless the student's "
+    "OWN present-tense material conditions are also breaking through.\n\n"
+    "Respond with JSON only: {\"axis\": \"CRISIS\"|\"BURNOUT\"|\"ENGAGED\"|\"NONE\", "
+    "\"reasoning\": \"2-3 sentence explanation of your classification\", "
+    "\"signal\": \"brief description of key signal or lack thereof\", "
+    "\"confidence\": 0.0-1.0}"
+)
+
+VARIANT_CHOICES = ("single-pass", "two-pass", "both", "reasoning", "reasoning-two-pass")
 
 log = logging.getLogger("run_4axis_full_corpus_test")
 
@@ -245,6 +305,50 @@ def save_results(
             "(two-pass: prescan + classifier; reads WELLBEING_CLASSIFIER_SYSTEM "
             "and WELLBEING_CLASSIFIER_PROMPT from insights.prompts)"
         )
+    elif variant == "reasoning":
+        filename = (
+            f"test_n_4axis_REASONING_FULL_CORPUS_{model_key}_"
+            f"{date}_{time_tag}{suffix}.json"
+        )
+        test_name = "test_n_4axis_reasoning_full_corpus"
+        description = (
+            "Full-corpus 4-axis wellbeing classification with REASONING field. "
+            "Same 4-axis categories and equity guardrails as single-pass, but "
+            "output schema adds 'reasoning' (2-3 sentences) before confidence, "
+            "giving the model space to work through the case. max_tokens=400. "
+            "Designed to test whether flat 0.95 confidence in single-pass is an "
+            "artifact of constrained output format (150 tokens, no reasoning) "
+            "rather than a property of the 4-axis schema. One LLM call per "
+            "submission (no prescan). Intended as paper comparison: binary "
+            "single-pass vs 4-axis-with-reasoning single-pass on same 46-student "
+            "corpus. Run n=1 (determinism at temp=0.1 makes additional passes "
+            "redundant if confidence calibrates)."
+        )
+        classifier_entry_point = (
+            "run_4axis_full_corpus_test.FOUR_AXIS_REASONING_SYSTEM + "
+            "FOUR_AXIS_SUBMISSION_PROMPT via insights.llm_backend.send_text "
+            "(single-pass; no prescan; max_tokens=400)"
+        )
+    elif variant == "reasoning-two-pass":
+        filename = (
+            f"test_n_4axis_REASONING_TWO_PASS_FULL_CORPUS_{model_key}_"
+            f"{date}_{time_tag}{suffix}.json"
+        )
+        test_name = "test_n_4axis_reasoning_two_pass_full_corpus"
+        description = (
+            "Full-corpus 4-axis wellbeing classification: prescan pass 0 "
+            "(unchanged production _prescan_for_personal_signals) + "
+            "FOUR_AXIS_REASONING_SYSTEM classifier pass 1 (reasoning field, "
+            "max_tokens=400). Tests whether prescan signal-foregrounding combined "
+            "with reasoning space produces calibrated confidence on equity edge "
+            "cases (WB04/WB08/WB11) that scored flat 0.95 on single-pass and "
+            "0.6/CLEAR on the binary. Two LLM calls per submission."
+        )
+        classifier_entry_point = (
+            "_prescan_for_personal_signals (pass 0) + "
+            "run_4axis_full_corpus_test.FOUR_AXIS_REASONING_SYSTEM via "
+            "insights.llm_backend.send_text (pass 1; max_tokens=400)"
+        )
     else:
         raise ValueError(f"Unknown variant: {variant}")
 
@@ -361,6 +465,91 @@ def run_one_single_pass(
 
 
 # ---------------------------------------------------------------------------
+# Reasoning-pass invocation (4-axis with reasoning field, max_tokens=400)
+# ---------------------------------------------------------------------------
+
+def run_one_reasoning_pass(
+    backend: BackendConfig,
+    student_id: str,
+    student_name: str,
+    submission_text: str,
+    *,
+    source: str,
+    expected_axis: str | None,
+    pattern: str | None,
+    signal_type: str | None,
+    run_idx: int,
+) -> dict:
+    """Single-pass 4-axis with a reasoning field in the output JSON.
+
+    Uses FOUR_AXIS_REASONING_SYSTEM (same guardrails as single-pass but
+    output schema adds 'reasoning' before confidence) and max_tokens=400.
+    Designed to test whether flat-0.95 confidence is an artifact of the
+    constrained 150-token single-pass format.
+    """
+    import re as _re
+    prompt = FOUR_AXIS_SUBMISSION_PROMPT.format(
+        student_name=student_name,
+        submission_text=submission_text,
+    )
+    t0 = time.time()
+    try:
+        raw_output = send_text(
+            backend,
+            prompt,
+            FOUR_AXIS_REASONING_SYSTEM,
+            max_tokens=REASONING_PASS_MAX_TOKENS,
+        )
+        elapsed = round(time.time() - t0, 1)
+        axis_match = _re.search(r'"axis"\s*:\s*"([^"]*)"', raw_output or "")
+        axis = axis_match.group(1) if axis_match else "PARSE_ERROR"
+        conf_match = _re.search(r'"confidence"\s*:\s*([\d.]+)', raw_output or "")
+        confidence = float(conf_match.group(1)) if conf_match else 0.0
+        reasoning_match = _re.search(r'"reasoning"\s*:\s*"([^"]*)"', raw_output or "")
+        reasoning = reasoning_match.group(1) if reasoning_match else ""
+        signal_match = _re.search(r'"signal"\s*:\s*"([^"]*)"', raw_output or "")
+        signal = signal_match.group(1) if signal_match else ""
+        error = None
+    except Exception as exc:  # noqa: BLE001
+        elapsed = round(time.time() - t0, 1)
+        raw_output = ""
+        axis = "ERROR"
+        confidence = 0.0
+        reasoning = ""
+        signal = ""
+        error = str(exc)
+        log.exception("reasoning-pass send_text failed for %s: %s", student_id, exc)
+
+    correct = "N/A"
+    if expected_axis is not None and axis not in ("ERROR", "PARSE_ERROR"):
+        correct = "OK" if axis == expected_axis else "MISMATCH"
+
+    return {
+        "codepath": "test_harness_4axis_reasoning_pass",
+        "classifier_variant": "reasoning",
+        "source": source,
+        "run": run_idx,
+        "student_id": student_id,
+        "student_name": student_name,
+        "pattern": pattern,
+        "signal_type": signal_type,
+        "expected_axis": expected_axis,
+        "actual_axis": axis,
+        "confidence": confidence,
+        "reasoning": reasoning,
+        "signal": signal,
+        "prescan_signals": None,
+        "correct": correct,
+        "submission_text": submission_text,
+        "prompt": prompt,
+        "system_prompt": FOUR_AXIS_REASONING_SYSTEM,
+        "raw_output": raw_output,
+        "time_seconds": elapsed,
+        "error": error,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Two-pass invocation (production classify_wellbeing)
 # ---------------------------------------------------------------------------
 
@@ -432,6 +621,114 @@ def run_one_two_pass(
 
 
 # ---------------------------------------------------------------------------
+# Reasoning two-pass invocation (prescan + FOUR_AXIS_REASONING_SYSTEM)
+# ---------------------------------------------------------------------------
+
+def run_one_reasoning_two_pass(
+    backend: BackendConfig,
+    student_id: str,
+    student_name: str,
+    submission_text: str,
+    *,
+    source: str,
+    expected_axis: str | None,
+    pattern: str | None,
+    signal_type: str | None,
+    run_idx: int,
+) -> dict:
+    """Prescan (pass 0, unchanged) + FOUR_AXIS_REASONING_SYSTEM classifier (pass 1).
+
+    Combines the prescan's signal-foregrounding with the reasoning prompt's
+    calibrated confidence output. Tests whether prescan + reasoning space
+    together fix the flat-0.95 issue and catch the equity edge cases (WB04/WB08/WB11).
+    """
+    import re as _re
+    from insights.submission_coder import _prescan_for_personal_signals
+    from insights.prompts import WELLBEING_CLASSIFIER_PROMPT
+
+    t0 = time.time()
+    try:
+        # Pass 0: semantic prescan — identical to production
+        prescan_signals = _prescan_for_personal_signals(backend, submission_text)
+
+        # Build signal_prefix if prescan found sentences
+        if prescan_signals:
+            quoted = "\n".join(f'  "{s}"' for s in prescan_signals)
+            signal_prefix = (
+                "NOTE: The following sentence(s) from this student's submission "
+                "appear to describe their own personal circumstances:\n"
+                f"{quoted}\n"
+                "Even a single such sentence is sufficient for CRISIS or BURNOUT "
+                "classification if it reflects genuine personal circumstances.\n\n"
+            )
+        else:
+            signal_prefix = ""
+
+        # Pass 1: classify using reasoning system prompt instead of production classifier
+        prompt = WELLBEING_CLASSIFIER_PROMPT.format(
+            student_name=student_name,
+            signal_prefix=signal_prefix,
+            assignment_prompt=ASSIGNMENT_PROMPT_TEXT,
+            submission_text=submission_text,
+        )
+        raw_output = send_text(
+            backend,
+            prompt,
+            FOUR_AXIS_REASONING_SYSTEM,
+            max_tokens=REASONING_PASS_MAX_TOKENS,
+        )
+        elapsed = round(time.time() - t0, 1)
+
+        axis_match = _re.search(r'"axis"\s*:\s*"([^"]*)"', raw_output or "")
+        axis = axis_match.group(1) if axis_match else "PARSE_ERROR"
+        conf_match = _re.search(r'"confidence"\s*:\s*([\d.]+)', raw_output or "")
+        confidence = float(conf_match.group(1)) if conf_match else 0.0
+        reasoning_match = _re.search(r'"reasoning"\s*:\s*"([^"]*)"', raw_output or "")
+        reasoning = reasoning_match.group(1) if reasoning_match else ""
+        signal_match = _re.search(r'"signal"\s*:\s*"([^"]*)"', raw_output or "")
+        signal = signal_match.group(1) if signal_match else ""
+        error = None
+    except Exception as exc:  # noqa: BLE001
+        elapsed = round(time.time() - t0, 1)
+        raw_output = ""
+        axis = "ERROR"
+        confidence = 0.0
+        reasoning = ""
+        signal = ""
+        prescan_signals = []
+        error = str(exc)
+        log.exception("reasoning-two-pass failed for %s: %s", student_id, exc)
+
+    correct = "N/A"
+    if expected_axis is not None and axis not in ("ERROR", "PARSE_ERROR"):
+        correct = "OK" if axis == expected_axis else "MISMATCH"
+
+    return {
+        "codepath": "test_harness_4axis_reasoning_two_pass",
+        "classifier_variant": "reasoning-two-pass",
+        "source": source,
+        "run": run_idx,
+        "student_id": student_id,
+        "student_name": student_name,
+        "pattern": pattern,
+        "signal_type": signal_type,
+        "expected_axis": expected_axis,
+        "actual_axis": axis,
+        "confidence": confidence,
+        "reasoning": reasoning,
+        "signal": signal,
+        "prescan_signals": prescan_signals,
+        "correct": correct,
+        "submission_text": submission_text,
+        "prompt": prompt,
+        "system_prompt": FOUR_AXIS_REASONING_SYSTEM,
+        "raw_output": raw_output,
+        "time_seconds": elapsed,
+        "error": error,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Per-variant driver
 # ---------------------------------------------------------------------------
 
@@ -450,6 +747,10 @@ def run_variant(
         run_one = run_one_single_pass
     elif variant == "two-pass":
         run_one = run_one_two_pass
+    elif variant == "reasoning":
+        run_one = run_one_reasoning_pass
+    elif variant == "reasoning-two-pass":
+        run_one = run_one_reasoning_two_pass
     else:
         raise ValueError(f"Unknown variant: {variant}")
 
@@ -460,6 +761,10 @@ def run_variant(
     if variant == "single-pass":
         print(f"  Classifier: Test N inline prompts via "
               f"insights.llm_backend.send_text")
+    elif variant in ("reasoning", "reasoning-two-pass"):
+        print(f"  Classifier: FOUR_AXIS_REASONING_SYSTEM (reasoning field, "
+              f"max_tokens={REASONING_PASS_MAX_TOKENS})"
+              + (" + prescan pass 0" if variant == "reasoning-two-pass" else ""))
     else:
         print(f"  Classifier: insights.submission_coder.classify_wellbeing")
     print(f"{'=' * 70}\n")
