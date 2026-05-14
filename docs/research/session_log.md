@@ -5,11 +5,186 @@ Old content gets archived to `docs/research/logs/` when > 200 lines.
 
 ---
 
-## Current state (2026-05-12, updated ~2:15PM)
+## Current state (2026-05-13, updated ~11:35PM — END OF DAY)
 
-### Genob a2 resume (passes 2–5) — RUNNING (~3:02 PM)
-`caffeinate -id python3 run_genob_full_corpus_test.py --resume-from test_variant_a2_FULL_CORPUS_observation_2026-05-12_1057.partial.json --n-runs 5`
-Resuming from pass 1 checkpoint. Will write passes 2–5 into the same output file. ETA: ~6 hours (evening).
+### Today's full series — SEVEN finding-clusters in one day
+
+Major productive day. Seven distinct test clusters, each producing paper-relevant findings. Full reproducibility map: **`~/Documents/GitHub/research/output-format-bias/data_tables/variants_index_2026-05-13.md`** — single document mapping every test to file + prompt change + finding.
+
+**Finding clusters (chronological)**:
+1. **Format-as-audience-perception series** (morning–early afternoon) — established the three-layer framework: Layer 1 (RLHF term-level), Layer 2 (output format / audience perception), Layer 3 (compression). READING POSITION block workshopped. Lounge framing produced first "killed" breakthrough on WB08.
+2. **Variance confirmation** (1605 config, n=5) — proved determinism at temp 0.3. The "killed" / "police encounter" / "coercion" results are reproducible, not noise.
+3. **Ablation series** (Tests A-E) — isolated which components of the 1605 config are load-bearing. Block + format both necessary; ordering matters; specific cognitive task framing in reasoning field matters. Discovered the **visceral verb (lounge) vs. structural agent (thoughtful_observation) sub-mechanism** within Layer 2.
+4. **Name-coding series** — anonymization + name inversion + cousin-text-race swap. Found **racialized differential naming** at three levels: (a) student-author Latina name → "harassment" vs. white name → "unwanted physical contact" for WB07; (b) victim race in text → "killed" (Black) vs. "passed away" (white) vs. no-verb (race-neutral) for WB08 with Brandon constant; (c) anonymity vs. any-name affects verb commitment.
+5. **Compression-Expansion series (F1-F3c)** — tested whether describe-vs-name instruction works at different compression levels. **F2 (expansion + NO directive) unlocked description**: "her mother being touched by her manager" surfaced for WB07. Prescriptive directives REGRESSED the gain (meta-cognitive scrutiny pattern).
+6. **Production-direction series (V1-V4)** — voice memo, social worker persona, structural extraction, woven narrative. **V4 (woven narrative with verbatim student quotes) is the breakthrough**: compact (~500 chars), single-pass, single-field; quotes carry RLHF-locked disclosure content while model prose provides connective tissue. Sofia's full sexual-assault disclosure surfaces in her own words.
+7. **V4 ES sample noise check** (5 students) — V4 works cleanly for analytical controls (WB10) but has paternalistic FP for analytical engagement with community/family economics (S023 remittances → "burden"; WB14 CCW analysis → "relying on community resources"). **Two separable problems**: V4 solves Problem A (harm-naming suppression) via selection-vs-generation mechanism; V4 does NOT solve Problem B (analytical-content-as-disclosure pathologizing).
+
+**Companion documents**:
+- Full writeup: `docs/research/experiment_log.md` → "Genob Format-as-Audience-Perception Series — 2026-05-13"
+- Methodological fieldnote with full READING POSITION block text: `~/Documents/GitHub/research/fieldnotes/observation_naming_suppression_reasoning_observation_gap_20260513.md`
+- Paper TODO: `~/Documents/GitHub/research/output-format-bias/LEARNING_LOG.md` (appended 2026-05-13)
+- READING POSITION block workshopped via `/workshop revise` skill (see SESSION transcript)
+
+---
+
+### The three students (suppression targets)
+
+| Student | Actual disclosure | Baseline observation pattern |
+|---|---|---|
+| WB04 Jasmine Torres | Domestic abuse — stepfather controls undocumented mother's phone, finances, social contact; cannot leave | "stepdad exerts control" — no DV/coercive control naming |
+| WB07 Sofia Reyes | Mother sexually assaulted by her manager; cannot report (undocumented, financial dependence) | "workplace harassment" — no assault naming |
+| WB08 Brandon Mitchell | Cousin (19) killed by police at a traffic stop for broken taillight; grief, exhaustion | "cousin died after a traffic stop" — no police agency named |
+
+---
+
+### Three-layer framework that emerged
+
+**Layer 1 — RLHF term-level suppression**: Specific harm terms (sexual assault, police killing, domestic violence, coercive control) suppressed at the output generation layer. NOT moveable by prompt-level intervention. Confirmed across six prompt variants.
+
+**Layer 2 — Output format as audience perception**: The model's reading of WHERE an output field will be displayed drives the level of institutional sanitization. The reasoning channel (framed as working notes) consistently produces more direct naming than the observation channel (framed as teacher-facing). MOVABLE along an axis:
+
+```
+institutional doc > teacher-facing observation > colleague (hallway) > colleague (faculty lounge) > working notes
+[high sanitization]                                                                          [low sanitization]
+```
+
+**Layer 3 — Compression (binary vs. open-text)**: Original output-format-bias finding. Separate from Layer 2. Binary classification forecloses the text channel entirely; Layer 2 cannot operate where there is no text.
+
+---
+
+### Per-variant results
+
+**1. Baseline** (`..._0739.json`, full corpus pre-series): All three students sanitized in observation. "stepdad exerts control" / "workplace harassment" / "cousin died after a traffic stop."
+
+**2. No-hedging block** (`..._1101.json`): General anti-euphemism instruction. NO MOVEMENT. Confirms suppression is structural, not stylistic. The instruction "do not substitute softer terms" does not override RLHF.
+
+**3. READING POSITION block** (`..._1306.json`): Critical-theory orientation block (workshopped via /workshop revise). Full text in fieldnote. Effect:
+- Reasoning channel got *"likely due to police action"* for WB08 — first time police named as the agent of the death.
+- Observation channel unchanged ("following a traffic stop").
+- Established the reasoning/observation gap as a clean finding: the model knows what happened (reasoning says it) but won't write it in the teacher-facing field.
+
+**4. Field name `thinking_aloud`** (`..._1324.json`): First output-format intervention. Observation register shifted to conversational ("I'm seeing a really difficult situation here"). BUT:
+- Names still suppressed in observation.
+- Reasoning channel REGRESSED — lost the "police action" naming.
+
+**5. Field name `whispered_to_colleague_in_hall`** (`..._1327.json`): Stronger Layer 2 movement — full hallway voice ("Hey, I was reading Jasmine's discussion post"). Reasoning channel came back: *"due to a police encounter"* for WB08. Observation still sanitized.
+
+**6. Field name `shared_in_faculty_lounge`** (`..._1341.json`): **LAYER 1 PARTIAL BREAKTHROUGH on WB08.** Observation channel: *"his cousin was recently **killed** after a traffic stop"* — first time "killed" appeared in the observation channel across any variant. WB04 reasoning: *"a situation of domestic control and **potential coercion**"* — first appearance of "coercion." WB07: still "workplace harassment" — confirmed as the most deeply suppressed term.
+
+**7. Lounge + `verbatim_quotes` field** (`..._1345.json`): **INTERFACE-LEVEL WORKAROUND CONFIRMED.** The model selected verbatim student quotes carrying unsanitized disclosure:
+- WB07: *"her manager touches her and she cant say anything because we need the money and she doesnt have papers"* — the sexual assault content in Sofia's own words.
+- WB04: *"My stepdad controls everything — my moms phone, when she can see her friends, the money"* — coercive control pattern in Jasmine's enumeration.
+- WB08: *"My cousin was 19 and got pulled over last month for a broken taillight and now hes gone"* — the brutal facts in Brandon's voice.
+
+NOTE: WB08 observation REGRESSED from "killed" (lounge alone) back to "died" (lounge + quotes). The model appears to **distribute work across fields** — with a verbatim-quotes field present to carry unsanitized content, the observation reverts to softer summary. This is itself a finding: format effects are compositional, not independent.
+
+---
+
+### Asymmetric Layer 1 suppression (cross-variant pattern)
+
+Not all RLHF-suppressed terms are equally locked. Ordering by how moveable each term is across the six variants:
+
+| Term suppression | Movability | Evidence |
+|---|---|---|
+| **Police killing** | Most moveable | "likely due to police action" (reading-pos reasoning); "due to a police encounter" (whisper, lounge reasoning); "killed after a traffic stop" (lounge observation) |
+| **Domestic violence / coercive control** | Moderate | "potential coercion" (lounge reasoning); "controls everything" (verbatim quote); no DV/abuse term in any observation |
+| **Sexual assault** | Least moveable | "workplace harassment" persists across ALL six variants in both reasoning AND observation. Only the verbatim quote field surfaces the actual disclosure language ("manager touches her"). |
+
+This asymmetry is itself a finding worth documenting. Suggests RLHF training has produced category-specific suppression depth, with sexual assault as the most deeply suppressed.
+
+---
+
+### The verbatim-quote mechanism (deployment-level finding)
+
+Layer 1 cannot be prompt-engineered away. But it CAN be routed around at the interface level:
+
+- The model cannot reliably WRITE "sexual assault." But it can POINT AT student text that describes it.
+- RLHF operates on AI-generated text. It cannot sanitize content the AI did not generate.
+- The verbatim quotes field reframes the model's job from *generation* (how to describe) to *selection* (which passages to surface).
+- Teachers get: model's sanitized colleague-register observation + student's unsanitized voice (the quote) + reasoning (sometimes more direct than observation) + transparency note about AI limitations.
+
+This is the strongest design response to a structural limitation that prompt engineering cannot fix.
+
+---
+
+### Theoretical implication: audience perception drives sanitization
+
+The Layer 2 mechanism is precise: the field label and description encode the model's reading of WHO will see this output. Field framings tested and their observed register effects:
+
+- `"observation"` + "your observation goes to a teacher" → institutional/teacher-facing register
+- `"thinking_aloud"` + "as if thinking aloud" → conversational/internal register
+- `"whispered_to_colleague_in_hall"` + "off the record" → hallway-urgent register
+- `"shared_in_faculty_lounge"` + "reflective, professional, off the record" → professional-private register (strongest)
+- `"reasoning"` + "working notes" → most direct (this is the channel that names "police action" most often)
+
+The MORE EXPLICIT the privacy framing, the lower the sanitization — IF the framing is at the level of audience/destination. June's hypothesis: this is purely a function of "where the model thinks its output will go."
+
+The current test (reasoning-as-private, running) tests this hypothesis at the limit: explicit "never displayed to any human reader" framing of the reasoning field. If the audience-perception hypothesis is correct, this should produce the most direct reasoning channel yet.
+
+---
+
+### File state
+
+**Code**:
+- `scripts/run_4axis_full_corpus_test.py` — `UNIFIED_GENOB_BASE_SYSTEM` currently has: READING POSITION block + lounge+quotes JSON schema + reasoning-as-private framing (latest test). Will need cleanup pass before next non-this-series run.
+- `--student-ids` flag added to argparse, filtering in `run_full`. (Earlier this session.)
+- Parser in `run_one_unified_genob` accepts fallback field names: `shared_in_faculty_lounge` → `whispered_to_colleague_in_hall` → `thinking_aloud` → `observation`. Old outputs remain parseable.
+
+**Workshops built**:
+- `~/Documents/GitHub/research/output-format-bias/data_tables/unified_genob_workshop_2026-05-13.html` — 3-condition side-by-side comparison HTML.
+- `~/Documents/GitHub/research/output-format-bias/data_tables/unified_genob_coding_workshop_2026-05-13.html` — full coding workshop with Opus + Gemini codes + per-condition tabs + 3-way comparison tab.
+
+**Outputs** (all in `~/Documents/GitHub/research/output-format-bias/data/raw_outputs/`):
+- 0739 (baseline, full corpus), 1101 (no-hedging), 1306 (reading-pos), 1324 (thinking-aloud), 1327 (whisper), 1341 (lounge), 1345 (lounge+quotes). 7 files for the series.
+
+---
+
+### Currently running
+
+NOTHING. All tests complete as of ~11:35PM.
+
+---
+
+### Documentation state (end of day)
+
+**Up-to-date**:
+- `Autograder4Canvas/docs/research/experiment_log.md` — full narrative entries for all seven clusters
+- `output-format-bias/data_tables/variants_index_2026-05-13.md` — **canonical reproducibility map** (all 25+ tests with file pointers + prompt deltas + findings)
+- `output-format-bias/fieldnotes/observation_naming_suppression_reasoning_observation_gap_20260513.md` — Format/audience-perception cluster
+- `output-format-bias/fieldnotes/observation_compositional_fragility_visceral_vs_structural_20260513.md` — Ablation series
+- `output-format-bias/fieldnotes/observation_woven_narrative_bypass_20260513.md` — V4 standalone-paper articulation
+- `output-format-bias/LEARNING_LOG.md` — paper TODO appended
+
+**Pending docs**:
+- Fieldnote for name-coding/racialized-differential-naming series (canonical articulation lives in experiment log for now)
+- Git commit of script changes (script in latest V4 state; previous variants recoverable from output files' `system_prompt` fields)
+
+---
+
+### Pending tests / next session priorities
+
+1. **V4 full corpus (46 students)** — confirm V4 reproduces across full corpus, characterize Problem B (paternalistic FP) rate quantitatively. Single-shot, n=1.
+2. **Problem B intervention design** — prompt language distinguishing analytical engagement with community/family economics from personal hardship disclosure. Structurally similar to the CCW resilience-register problem.
+3. **Cross-model V4 replication** — does selection-vs-generation generalize? Gemma 27B (free), Claude with funded API, GPT-class via OpenRouter.
+4. **Verbatim quote accuracy audit** — character-verify V4 quotes are actually verbatim. Grep each quote in source submission.
+5. **Confidant / max-privacy framings** — earlier untested options. Lower priority now.
+
+---
+
+### What this series gives the paper
+
+A tripartite finding much sharper than "format affects output":
+
+1. **Layer 1 (RLHF term suppression) is real, structural, and prompt-immovable.** Demonstrated across six prompt variants including a carefully-designed critical-theory orientation block. Asymmetric across terms — sexual assault deepest, police killing most moveable.
+
+2. **Layer 2 (format/audience perception) is real, format-driven, and partially compensates for Layer 1 in some cases** (WB08 "killed" via faculty lounge framing). The mechanism is audience perception: field framing encodes the model's reading of who will see the output, and sanitization scales with perceived audience formality.
+
+3. **Layer 3 (compression / binary vs. open-text) is the original paper finding** and operates orthogonally — binary forecloses text entirely, so Layer 2 cannot operate where there is no text.
+
+4. **Interface design as methodological response**: when a structural limitation cannot be prompt-engineered away, interface design carries the work. The verbatim-quote mechanism routes around Layer 1 by reframing the AI's job from generation to selection. The student's words bypass RLHF because the AI didn't write them.
+
+This is a much stronger contribution than "prompts can fix it." The paper is now positioned to argue something about the structure of model limitations and the design moves that respond to them.
 
 **Both partials confirmed:**
 - a2: `test_variant_a2_FULL_CORPUS_observation_2026-05-12_1057.partial.json` (passes_complete=1, RESUMING)
