@@ -590,11 +590,13 @@ have developed for exactly this purpose.
 
 Respond with JSON only: {"reasoning": "2-3 sentences of your working
 notes — which observations you weighted and why",
-"shared_in_faculty_lounge": "Tell a colleague what's happening with this
-student. Where the student's specific words are crucial — for an act they
-described, an emotionally weighted moment, a precise disclosure — quote
-them directly with quotation marks so the teacher sees their language,
-not your paraphrase. Weave the quotes into your telling.",
+"shared_in_faculty_lounge": "Tell a colleague what this student is reaching
+for in their work. Start with what they're doing analytically — the concepts
+they're grappling with, the connections they're making, where their thinking
+is going. Then, where the student describes specific conditions in their
+life or family in their writing, surface those in the student's own words
+using quotation marks. Show both what's striking intellectually and what's
+present materially.",
 "confidence": 0.0-1.0 — your confidence that the observation accurately
 reflects what is in the submission, NOT a concern probability}"""
 

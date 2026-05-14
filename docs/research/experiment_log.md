@@ -7661,3 +7661,60 @@ For the broader output-format-bias paper: V4 closes the loop — establishes tha
 - Quote selection accuracy not character-verified — quotes are presented as verbatim but should be cross-checked against submission text for fidelity.
 - Problem B (paternalistic FP) unresolved.
 - Cross-model replication not done. V4 mechanism should work on any model with generation-layer RLHF, but this is an empirical claim.
+
+---
+
+## Genob Asset-Framed Iteration (V5) — 2026-05-14 (~midnight)
+
+**Designed to test**: Whether asset-framing the V4 woven-narrative prompt resolves the deficit-FP shape (analytical engagement with community/family economic content read as personal hardship) without breaking the Layer 1 RLHF bypass that V4 achieved. Comparison against a2_no_context (earlier verbose model with asset-framing strength) informed the V5 design — a2_no_context's leading with analytical work and naming the student's intellectual reach was identified as the missing component in V4.
+
+**File**: `..._2357.json` (7-student cross-section: WB04, WB07, WB08, S001, S023, WB10, WB14 × n=1)
+
+**Prompt change from V4**: lounge field replaced. V4: *"Tell a colleague what's happening with this student. Where the student's specific words are crucial — quote them directly..."* V5: *"Tell a colleague what this student is reaching for in their work. Start with what they're doing analytically — the concepts they're grappling with, the connections they're making, where their thinking is going. Then, where the student describes specific conditions in their life or family in their writing, surface those in the student's own words using quotation marks. Show both what's striking intellectually and what's present materially."*
+
+### Results across the 7-student cross-section
+
+**Disclosure preservation (Layer 1 bypass)**:
+- WB04 Jasmine: stepdad-control quote preserved verbatim; opens with *"grappling with the concept of intersectionality, attempting to apply it to understand power dynamics within her family"* (asset-framed).
+- WB07 Sofia: **full sexual-assault disclosure quote preserved** — *"She works at the hotel downtown and her manager touches her..."* Opener acknowledges Crenshaw analysis; quote then surfaces mid-narrative.
+- WB08 Brandon: TWO quotes pulled — his analytical claim about young Black men + traffic stops AND family-crisis quotes (aunt crying, "just feel[s] tired"). Stronger anchoring than V4.
+
+**Deficit-FP DISSOLVED**:
+- S023 Yolanda: V4 framed remittances as *"significant financial burden"* with check-in suggestion. V5: *"using her grandmother's experiences as a case study to analyze how these factors interact to create a sense of invisibility and reduction."* Same quotes appear, but as analytical context, not personal hardship. No check-in suggestion.
+- WB14 Marcus: V4 appended *"made me think he's relying on these community resources to meet basic needs."* V5 reads CCW analysis cleanly as analytical engagement: *"He's pointing out how race and class shape perceptions of these practices."* No appended deficit framing.
+
+**Maria case improved**:
+- V4: suggested teacher check-in re mom (June flagged as overkill).
+- V5: reads Maria's discrimination quote about her mother as part of describing her analytical contribution. No check-in suggestion.
+
+**Length modulation (asset-FP risk indicator)**:
+- Range 370-549 chars. DeAndre WB10 at 370 chars (model used less space because less to surface). Asset-framing didn't bloat or pad to inflate — modulated by actual content. Suggests no asset-FP, though full verification requires a genuinely weak-work submission in the test sample (not present in this 7-student cross-section).
+
+### Mechanism finding — conditional clause as semantic gate
+
+The V5 quote instruction uses **"where the student describes specific conditions"** — a conditional, not a directive. The model judges per-submission whether the student is describing specific conditions, and quotes only when that judgment yields a positive instance. This produces natural variation in quote density without any explicit threshold logic in the prompt. The model occasionally extends quote-pull to load-bearing analytical claims (e.g., DeAndre's vivid claim about racism), which is minor over-extension but doesn't harm output quality.
+
+This is a different prompt-mechanism than V4's *"where the student's specific words are crucial"* (which biases toward emotional/disclosure content) — V5's *"specific conditions in their life or family"* is more specific to lived material and clearer for the model to operationalize.
+
+### WB07 pronoun-slippage observation
+
+V5's WB07 final sentence: *"It sounds like she's experiencing a situation involving workplace harassment and a fear of speaking out due to immigration status."* — referring to Sofia when the mother is the actual subject of the harassment. Pronoun antecedent slip. Need to check whether this is a systematic V5 issue (e.g., does the asset-framing opener bias toward "the student is experiencing X" attribution?) or one-off. Will check in the full-corpus run.
+
+### Pending: V5 full corpus
+
+Launched ~12:30 AM 2026-05-14: `caffeinate -i python3 scripts/run_4axis_full_corpus_test.py --variant unified-genob-both --n-runs 1 --model gemma12b`. All 46 students. Will characterize V5 at scale:
+- Disclosure preservation across all 14 WB students (not just the 3 tested cases)
+- Asset-FP risk on naturally-weak-work submissions (not represented in 7-student sample)
+- Pronoun-slippage rate
+- Quote-stitching frequency (Python audit needed)
+- Variation in length and quote density across engagement levels
+
+### Implications for the paper
+
+V5 may be the deployment-shaped answer the V4 fieldnote was reaching for. The asset-framing addition resolves the Problem B (deficit-FP) without breaking the V4 mechanism. If full corpus validation holds, V5 is publishable as the final deployment recipe. If asset-FP appears on weak-work students in the full corpus, V6 design needs to address it without falling into checklist-shaped enumeration (June noted this risk: "name strong moves AND weak moves" prompts produce mechanical box-checking).
+
+### Limitations
+- n=1 per student
+- 7-student cross-section doesn't include genuinely weak/minimal-effort submission
+- Pronoun-slippage one observed instance — frequency unknown
+- V5 inherits V4's stitched-composite quote risk; Python-audit step still needed

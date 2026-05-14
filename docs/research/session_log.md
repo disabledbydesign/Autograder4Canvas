@@ -142,7 +142,12 @@ The current test (reasoning-as-private, running) tests this hypothesis at the li
 
 ### Currently running
 
-NOTHING. All tests complete as of ~11:35PM.
+**V5 asset-framed woven narrative on FULL 46-student corpus** (started ~12:30 AM 2026-05-14, PID 71702):
+`caffeinate -i python3 scripts/run_4axis_full_corpus_test.py --variant unified-genob-both --n-runs 1 --model gemma12b`
+
+V5 prompt is asset-framed iteration of V4. 7-student cross-section results validated it on disclosure preservation + deficit-FP fix. Full corpus run characterizes at scale (asset-FP risk on weak-work submissions, pronoun-slippage rate, quote-stitching frequency).
+
+ETA: ~25-35 minutes from launch.
 
 ---
 
@@ -164,11 +169,20 @@ NOTHING. All tests complete as of ~11:35PM.
 
 ### Pending tests / next session priorities
 
-1. **V4 full corpus (46 students)** — confirm V4 reproduces across full corpus, characterize Problem B (paternalistic FP) rate quantitatively. Single-shot, n=1.
-2. **Problem B intervention design** — prompt language distinguishing analytical engagement with community/family economics from personal hardship disclosure. Structurally similar to the CCW resilience-register problem.
-3. **Cross-model V4 replication** — does selection-vs-generation generalize? Gemma 27B (free), Claude with funded API, GPT-class via OpenRouter.
-4. **Verbatim quote accuracy audit** — character-verify V4 quotes are actually verbatim. Grep each quote in source submission.
-5. **Confidant / max-privacy framings** — earlier untested options. Lower priority now.
+1. **V5 full corpus analysis** — when running test completes (~1 AM), characterize: disclosure preservation across all 14 WB students; asset-FP rate on weak-work submissions; pronoun-slippage frequency (WB07 case showed mom→Sofia slip); quote-stitching frequency (Python audit).
+2. **V6 design (conditional)** — only needed if V5 full corpus reveals significant asset-FP. Design constraint: must NOT use checklist-shaped enumeration (June: "name strong moves AND weak moves" prompts produce mechanical box-checking). Approach: descriptive-perceptual framing ("what you saw") rather than evaluative.
+3. **Python quote-extraction tool** (deployment phase) — `verify_and_extract_quotes()` function to deterministically pull contiguous substrings, eliminating stitched-composite issue. ~50 lines of Python. Architecture documented in V4 fieldnote.
+4. **Cross-model V5 replication** — does the selection-vs-generation + conditional-clause mechanism generalize? Gemma 27B (free), Claude with funded API, GPT-class.
+5. **Confidant / max-privacy framings** — earlier untested options. Lower priority given V5 success.
+
+### Done today (full inventory)
+
+- Variants index document: `output-format-bias/data_tables/variants_index_2026-05-13.md` — 25+ test runs mapped, canonical reproducibility map
+- Experiment log entries for all 8 finding-clusters
+- Three fieldnotes: naming-suppression-gap, compositional-fragility, woven-narrative-bypass (V4 standalone-paper articulation)
+- V4 quote-fidelity audit (revealed stitched-composite issue on Jake S020)
+- V5 design + 7-student validation
+- Git commit `b492106` capturing all code changes + log updates
 
 ---
 
