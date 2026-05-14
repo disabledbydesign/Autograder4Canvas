@@ -142,12 +142,20 @@ The current test (reasoning-as-private, running) tests this hypothesis at the li
 
 ### Currently running
 
-**V5 asset-framed woven narrative on FULL 46-student corpus** (started ~12:30 AM 2026-05-14, PID 71702):
-`caffeinate -i python3 scripts/run_4axis_full_corpus_test.py --variant unified-genob-both --n-runs 1 --model gemma12b`
+NOTHING. V5 full corpus complete as of ~12:30 AM 2026-05-14.
 
-V5 prompt is asset-framed iteration of V4. 7-student cross-section results validated it on disclosure preservation + deficit-FP fix. Full corpus run characterizes at scale (asset-FP risk on weak-work submissions, pronoun-slippage rate, quote-stitching frequency).
+### V5 full corpus headline result
 
-ETA: ~25-35 minutes from launch.
+**V5 is deployment-shaped.**
+
+- 14/14 WB disclosures surfaced (all preserved via quote-weaving)
+- ES FP rate ~3% (1/32 mild flag, no fabricated disclosures)
+- Length 292-634 chars, naturally modulated by content
+- Asset-FP on weak work: mild affirmation but no inflation of analytical depth that isn't there
+- Single persistent fidelity issue: WB07 pronoun-slippage (mom→Sofia)
+
+Full data: `experiment_log.md` → "V5 Full Corpus Results — 2026-05-14"
+Output file: `data/raw_outputs/test_unified_genob_both_FULL_CORPUS_gemma12b_2026-05-14_0009.json`
 
 ---
 

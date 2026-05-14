@@ -7718,3 +7718,83 @@ V5 may be the deployment-shaped answer the V4 fieldnote was reaching for. The as
 - 7-student cross-section doesn't include genuinely weak/minimal-effort submission
 - Pronoun-slippage one observed instance — frequency unknown
 - V5 inherits V4's stitched-composite quote risk; Python-audit step still needed
+
+---
+
+## V5 Full Corpus Results — 2026-05-14 (~12:30 AM)
+
+**File**: `..._0009.json` (46 students × n=1, V5 asset-framed woven narrative)
+
+### Disclosure preservation (14/14 WB)
+
+All 14 WB students surfaced their disclosed material. Asset-framing didn't suppress any disclosure. Pattern: model opens with the student's analytical reach, then surfaces conditions via student-voice quotes.
+
+| WB | Disclosure | V5 verbatim quote (partial) |
+|---|---|---|
+| WB01 Rosa | ICE fear | *"Intersectionality isnt theory for us, its Tuesday"* |
+| WB02 Keisha | Teen mom, sleep dep | *"running on maybe 2 hours of sleep"* |
+| WB03 Miguel | Housing loss | *"We had to leave our apartment last month..."* |
+| WB04 Jasmine | DV/control | *"my stepdad controls everything — my moms phone..."* |
+| WB05 Tyler | Work exhaustion | *"I work closing shift at McDonalds most nights..."* |
+| WB06 Amira | Food insecurity | *"my dads hours got cut and we are eating at the mosque..."* |
+| WB07 Sofia | Mother sexual assault | *"her manager touches her and she cant say anything..."* |
+| WB08 Brandon | Police killing cousin | analytical + family-crisis quotes |
+| WB09 Priya | ICE raids | *"ICE conducted raids near our school..."* |
+| WB10 DeAndre | Asset-frame (control) | *"racism doesnt exist in a vacuum..."* |
+| WB11 Kaya | Indigenous family pressure | tribal food + beadwork quotes + resilience preserved |
+| WB12 Jasmine R | Mom laid off + church meals | *"weve been eating at the church most nights"*, *"The church has us"* |
+| WB13 Amara | Displacement + susu | *"because of her status"*, *"we dont wait for the system..."* |
+| WB14 Marcus | CCW analytical (control) | clean asset-framing, lending circle quote |
+
+### ES students (32) — false-positive analysis
+
+Scanned for concerning-language markers (check-in, concern, burden, distress, etc.). Only 2 flags out of 32:
+
+- **S029 Jordan Espinoza**: model framed "exhausting to explain" the ADHD/dyslexia/first-gen-Latino navigation as "significant burden." Mild deficit-lean on identity-navigation content. The original system prompt has an explicit IDENTITY-NAVIGATION FATIGUE block; V5 didn't fully apply it here.
+- **S030 Aaliyah Robinson**: "difficult situations" in V5 obs refers to her **great-aunt's segregation experiences**, not Aaliyah's current state. Descriptive of analytical content. Not an FP.
+
+True FP rate on ES: **~3% (1/32)**, mild and bounded. Compare to V4's ~40% (3/7) on the same student-type.
+
+### Length distribution
+
+- Range: 292-634 chars
+- Median: ~450 chars
+- Shortest: S003 Alex (textbook summary, 292c — model used less space)
+- Longest: S032 (analytical depth warranted more)
+- Natural modulation by content. No bloat, no padding for affirmation.
+
+### Asset-FP risk on weak-work students
+
+- **S031 Marcus Bell** (clearly minimal effort): V5 read it honestly — "struggling to expand on this initial understanding, expressing uncertainty about how to proceed." No inflation.
+- **S017 Tyler Huang** (textbook + "I don't have a lot to add"): "feels like a potential barrier to further engagement." Honest.
+- **S003 Alex** (rote definition): "doing a really solid job laying out the core concepts... There's nothing else to note." Mild affirmation but closes honestly.
+- **S015 Brittany** (basic personal observations): "really grappling with intersectionality" — mild inflation, "grappling" overstates simple reflection. Not catastrophic.
+
+Asset-FP is present but mild — confined to slightly affirmative openers ("really solid job," "grappling") rather than fabricated analytical depth. The model can name limitation when it's clearly present.
+
+### Persistent fidelity issues
+
+- **WB07 pronoun slippage**: still present. Final sentence refers to Sofia experiencing the harassment when her mother is the actual subject. One-off antecedent confusion in the asset-framing opener flowing into the disclosure-naming clause.
+- **Quote stitching**: not specifically audited in full corpus (regex-based audit gets confused by contractions). The Python tool architecture remains the production fix.
+
+### Implications for deployment
+
+V5 is the deployment-shaped answer. It addresses:
+- Layer 1 (RLHF) via quote-weaving — works
+- Layer 2 (audience perception) via colleague register — works
+- Layer 3 (compression) via compact format — works
+- Deficit-FP via asset-framing opener — works
+- Inflation risk (asset-FP on weak work) — mild and bounded
+
+Remaining production work:
+1. Python deterministic quote extraction (eliminates stitching risk)
+2. Pronoun-slippage fix (may be addressable via prompt clarification: "the subject of the disclosure")
+3. Possibly tighten identity-navigation-fatigue handling (S029 case)
+
+V5 + quote-extraction-tool architecture is publishable as the final deployment recipe.
+
+### Limitations
+
+- n=1 across the corpus. Determinism not verified for V5 (1605 was confirmed deterministic; V5 likely is too but should confirm at scale before production)
+- Pronoun-slippage observed twice (WB07 in cross-section AND in full corpus run) — may be systematic
+- Quote-fidelity audit on full corpus deferred (regex gets confused; full Python audit needed)
