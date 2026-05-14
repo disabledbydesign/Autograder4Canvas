@@ -7723,6 +7723,8 @@ V5 may be the deployment-shaped answer the V4 fieldnote was reaching for. The as
 
 ## V5 Full Corpus Results — 2026-05-14 (~12:30 AM)
 
+> **⚠ STALE CLAIMS BELOW.** This section reflects initial keyword-scan assessment. The deployment-shaped claims in this entry were RETRACTED in the immediately following correction entry ("V5 Full Corpus — CRITICAL CORRECTION") based on actual reading audit. The retraction notes a fabrication finding (S010 Tyler) and revises the assessment to "V5 is NOT deployment-ready." Keeping this entry as historical record of the analytical journey, but the correction supersedes it for paper claims. Full audit details: `output-format-bias/data_tables/v5_full_corpus_audit_2026-05-14.md`.
+
 **File**: `..._0009.json` (46 students × n=1, V5 asset-framed woven narrative)
 
 ### Disclosure preservation (14/14 WB)

@@ -144,15 +144,22 @@ The current test (reasoning-as-private, running) tests this hypothesis at the li
 
 NOTHING. V5 full corpus complete as of ~12:30 AM 2026-05-14.
 
-### V5 full corpus headline result
+### V5 full corpus headline result (CORRECTED 2026-05-14 ~1:30 AM)
 
-**V5 is deployment-shaped.**
+**V5 is NOT deployment-ready.** Initial keyword-scan assessment was wrong; deeper reading revealed both the priority finding (deficit-shaped FPs) and a catastrophic fabrication (S010 Tyler).
 
-- 14/14 WB disclosures surfaced (all preserved via quote-weaving)
-- ES FP rate ~3% (1/32 mild flag, no fabricated disclosures)
-- Length 292-634 chars, naturally modulated by content
-- Asset-FP on weak work: mild affirmation but no inflation of analytical depth that isn't there
-- Single persistent fidelity issue: WB07 pronoun-slippage (mom→Sofia)
+**The primary issue (per J. Bloch)**: deficit-shaped FP pattern persists. Even though V5 fixed V4's Yolanda/Marcus deficit-FP, residual deficit-shaping appears on S009 Kevin Osei ("not much to add" → "lack of resources or support") and S029 Jordan Espinoza ("exhausting to explain" identity navigation → "significant burden"). The existing equity-floor block (#7 identity-navigation-fatigue) isn't fully applied.
+
+**The secondary issue**: S010 Tyler Nguyen — fully fabricated personal disclosure on a textbook-only submission. Catastrophic but rare (1/32). Addressable via Python quote-verification.
+
+**What V5 does well** (still real):
+- 11/11 WB disclosures preserved via verbatim student-voice quotes
+- 3/3 WB controls handled cleanly (no false-flagging)
+- Length 292-634c naturally modulated by content
+- Honest reads of minimal-effort work (S031 Marcus, S017 Tyler Huang)
+- WB07 pronoun-slippage persistent (Sofia/mother)
+
+Full per-student audit: `~/Documents/GitHub/research/output-format-bias/data_tables/v5_full_corpus_audit_2026-05-14.md`
 
 Full data: `experiment_log.md` → "V5 Full Corpus Results — 2026-05-14"
 Output file: `data/raw_outputs/test_unified_genob_both_FULL_CORPUS_gemma12b_2026-05-14_0009.json`
