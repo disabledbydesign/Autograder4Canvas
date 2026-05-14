@@ -7798,3 +7798,41 @@ V5 + quote-extraction-tool architecture is publishable as the final deployment r
 - n=1 across the corpus. Determinism not verified for V5 (1605 was confirmed deterministic; V5 likely is too but should confirm at scale before production)
 - Pronoun-slippage observed twice (WB07 in cross-section AND in full corpus run) — may be systematic
 - Quote-fidelity audit on full corpus deferred (regex gets confused; full Python audit needed)
+
+---
+
+## V5 Full Corpus — CRITICAL CORRECTION 2026-05-14 (~1:30 AM)
+
+**Methodology gap**: the initial V5 full-corpus assessment used keyword-scanning on ES students (checking for "concern," "burden," "check-in," etc.) rather than actually reading the outputs against submissions. The test-monitor convention explicitly warns against this — keyword scanning can only catch FPs that use specific markers; it cannot catch fabrications, which use the same language patterns as accurate content. Reading outputs against submissions for a sample of 8 ES students revealed a critical failure missed by the keyword pass.
+
+### Confirmed fabrication on S010
+
+**S010 Tyler Nguyen — V5 fabricated an entire personal disclosure.**
+
+Tyler's full submission (1,326 chars) is pure textbook analysis of intersectionality theory. Zero personal content — no family, no jobs, no parents, no siblings, no hardship.
+
+V5 output for S010 includes: *"He mentions, 'My mom has been working two jobs to support my siblings and me since my dad left, and it's been really tough.'"*
+
+This quote does not appear anywhere in Tyler's submission. Verified via substring search. The model fabricated a personal-disclosure quote with apparent verbatim quotation marks and attributed it to Tyler.
+
+### Revised V5 assessment
+
+- **NOT deployment-ready.** A ~3% catastrophic-fabrication rate (1/32 ES students, with this audit; real rate likely similar on full deployment) is unacceptable for teacher-facing prose.
+- The fabrication is the same failure shape that the quote-pull mechanism was supposed to prevent (model can't sanitize what student didn't write) — but the mechanism only bypasses RLHF; it doesn't prevent hallucination.
+
+### Other ES findings on closer reading
+
+- **S004 Priya**: quote about teacher "talked slower" is verbatim in source. ACCURATE.
+- **S005 Amara**: bracketed *"stand[s]"* is scholarly tense adjustment, not fabrication. ACCURATE.
+- **S009 Kevin**: quotes verbatim, but V5 appends interpretive overreach: Kevin's "not much to add" framed as *"could indicate a lack of resources or support to further explore this topic."* Mild deficit-stretch on what's just topical disengagement.
+
+### Implications
+
+1. **Python quote-verification is now safety-critical**, not production-niceness. The substring-match check (verify each quoted span IS a contiguous substring of source) would have caught S010 at output time. Must be implemented before any deployment.
+2. **V5 mechanism is still useful for the cases it works for** — disclosure preservation across WB cases is real, deficit-FP fix is real. But fabrication is an unfaced risk that quote-fidelity verification eliminates.
+3. **Asset-framing structure may contribute to fabrication risk**: the V5 prompt asks for analytical work + conditions described. When conditions aren't present, the model may over-generalize and generate plausible-sounding conditions. Possible mitigation: explicit "if no specific conditions are described, do not generate any" instruction. But this needs testing.
+4. **WB disclosure preservation count corrected**: 11 cases with actual disclosures + 3 controls (WB10, WB14, arguably WB09). V5 correctly read the 3 controls as analytical, not as disclosures. So 11/11 disclosure preservation + 3/3 control handling, not "14/14 disclosures."
+
+### Failed assertion to retract
+
+I previously claimed "V5 is the deployment-shaped answer." That assertion was based on insufficient assessment. The correct statement: **V5 is a substantial advance on V4 for the cases V4 was failing on, AND V5 introduces a fabrication risk that requires structural mitigation (Python quote-verification) before deployment.**
