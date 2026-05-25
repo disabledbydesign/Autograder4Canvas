@@ -50,12 +50,46 @@ def _strip_html(text: str) -> str:
     return re.sub(r"<[^>]+>", " ", text)
 
 
+# Theme-tag prefixes that mark un-analyzable submissions.
+# Wellbeing classification and observation generation must skip these records —
+# running them on empty/short text produces arbitrary classifications that look
+# like real data in the DB and UI.
+_SKIP_TAG_PREFIXES = (
+    "blank submission",
+    "insufficient text",
+    "audio/video submission",
+    "image submission",
+    "unsupported format",
+    "non-analyzable text",
+    "parse error",
+)
+
+
+def _is_skip_record(record) -> bool:
+    """True if this coding record was created because the submission couldn't be analyzed."""
+    tags = record.theme_tags if hasattr(record, "theme_tags") else record.get("theme_tags", [])
+    return any(
+        tag.startswith(p)
+        for tag in (tags or [])
+        for p in _SKIP_TAG_PREFIXES
+    )
+
+
 # File extensions by type — used for skip-reason diagnosis
 _AUDIO_VIDEO_EXTS = {
     ".mp3", ".m4a", ".wav", ".ogg", ".webm", ".mp4", ".mov",
     ".flac", ".aac", ".wma", ".opus", ".oga",
 }
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".tiff", ".bmp", ".webp"}
+_PDF_EXTS = {".pdf"}
+_DOCX_EXTS = {".docx", ".doc"}
+_ODT_EXTS = {".odt"}
+
+
+def _check_lib(module_name: str) -> bool:
+    """Return True if module_name can be imported."""
+    import importlib.util
+    return importlib.util.find_spec(module_name) is not None
 
 
 def _diagnose_skip(attachments: list) -> tuple[str, str]:
@@ -86,6 +120,47 @@ def _diagnose_skip(attachments: list) -> tuple[str, str]:
             f"teacher should review submission directly",
         )
 
+    # PDF — requires pdfminer.six
+    if all(e in _PDF_EXTS for e in exts if e):
+        if not _check_lib("pdfminer"):
+            return (
+                "PDF extraction unavailable — missing library",
+                f"PDF file(s) ({names_str}) — pdfminer.six is not installed; "
+                f"run: pip install pdfminer.six",
+            )
+        return (
+            "PDF extraction failed",
+            f"PDF file(s) ({names_str}) — extraction failed; file may be scanned "
+            f"(image-only PDF) or corrupted",
+        )
+
+    # Word documents — requires python-docx
+    if all(e in _DOCX_EXTS for e in exts if e):
+        if not _check_lib("docx"):
+            return (
+                "Word document extraction unavailable — missing library",
+                f"Word file(s) ({names_str}) — python-docx is not installed; "
+                f"run: pip install python-docx",
+            )
+        return (
+            "Word document extraction failed",
+            f"Word file(s) ({names_str}) — extraction failed; file may be corrupted "
+            f"or an unsupported legacy format",
+        )
+
+    # ODT — requires odfpy
+    if all(e in _ODT_EXTS for e in exts if e):
+        if not _check_lib("odf"):
+            return (
+                "ODT extraction unavailable — missing library",
+                f"ODT file(s) ({names_str}) — odfpy is not installed; "
+                f"run: pip install odfpy",
+            )
+        return (
+            "ODT extraction failed",
+            f"ODT file(s) ({names_str}) — extraction failed; file may be corrupted",
+        )
+
     # Mixed or unknown formats
     ext_list = ", ".join(sorted({e for e in exts if e})) or "unknown"
     return (
@@ -112,6 +187,15 @@ class InsightsEngine:
         self._store = store or InsightsStore()
         self._settings = settings or {}
         self._cancelled = False
+        # Sleep prevention is delegated to the shared SleepPreventer helper
+        # (also used by the research-panel engine). Kept as an attribute so
+        # cancel()/finally blocks can stop it from anywhere in the pipeline.
+        from insights.process_keepalive import SleepPreventer
+        self._sleep_preventer = SleepPreventer(
+            enabled=bool(self._settings.get("insights_keep_awake", True))
+        )
+        # Back-compat: a few older code paths poked `_caffeinate_proc` directly.
+        # Anything new should go through `_sleep_preventer`.
         self._caffeinate_proc = None
 
         # Push throttle setting into the LLM backend so it applies to all
@@ -130,107 +214,18 @@ class InsightsEngine:
     def _start_sleep_prevention(self) -> None:
         """Prevent the computer from sleeping while the pipeline runs.
 
-        macOS:   caffeinate -s (prevents system sleep including lid-close
-                 if "Prevent sleeping when display is off" is enabled
-                 in System Settings → Battery → Options)
-        Windows: powercfg to disable AC standby timeout (restored on stop)
-        Linux:   systemd-inhibit if available
-
-        Idempotent: if sleep prevention is already active, does nothing.
+        Delegates to the shared `SleepPreventer` helper (see
+        `insights.process_keepalive`). Idempotent.
         """
-        import platform
-        import subprocess as _sp
-        system = platform.system()
-
-        if not self._settings.get("insights_keep_awake", True):
-            return
-
-        # Already running — don't spawn a second process
-        if self._caffeinate_proc is not None:
-            if self._caffeinate_proc.poll() is None:
-                return  # still alive
-            self._caffeinate_proc = None  # died; fall through to restart
-
-        try:
-            if system == "Darwin":
-                # -s prevents system sleep (stronger than -i which only prevents idle)
-                # -w ties to our process ID so it auto-cleans if we crash
-                self._caffeinate_proc = _sp.Popen(
-                    ["caffeinate", "-s", "-w", str(os.getpid())],
-                    stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
-                )
-                log.info("Sleep prevention active (caffeinate -s)")
-
-            elif system == "Windows":
-                # Save current standby timeout, then disable
-                try:
-                    result = _sp.run(
-                        ["powercfg", "/query", "SCHEME_CURRENT", "SUB_SLEEP",
-                         "STANDBYIDLE"],
-                        capture_output=True, text=True, timeout=5,
-                    )
-                    # Parse current AC timeout for restoration later
-                    for line in result.stdout.splitlines():
-                        if "Current AC Power Setting Index" in line:
-                            self._original_standby = line.split("0x")[-1].strip()
-                            break
-                except Exception:
-                    self._original_standby = None
-
-                # Disable standby on AC power (0 = never)
-                _sp.run(
-                    ["powercfg", "/change", "standby-timeout-ac", "0"],
-                    capture_output=True, timeout=5,
-                )
-                log.info("Sleep prevention active (powercfg standby disabled)")
-
-            elif system == "Linux":
-                # Try systemd-inhibit
-                if shutil.which("systemd-inhibit"):
-                    self._caffeinate_proc = _sp.Popen(
-                        ["systemd-inhibit", "--what=sleep",
-                         "--who=Autograder4Canvas",
-                         "--why=Running overnight analysis",
-                         "sleep", "infinity"],
-                        stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
-                    )
-                    log.info("Sleep prevention active (systemd-inhibit)")
-
-        except Exception as e:
-            log.debug("Could not start sleep prevention: %s", e)
+        # Honor live settings changes — the preventer only spawns if enabled
+        self._sleep_preventer._enabled = bool(
+            self._settings.get("insights_keep_awake", True)
+        )
+        self._sleep_preventer.start()
 
     def _stop_sleep_prevention(self) -> None:
-        """Restore normal sleep behavior."""
-        import platform
-        import subprocess as _sp
-
-        # Kill caffeinate/systemd-inhibit process (macOS/Linux)
-        if self._caffeinate_proc:
-            try:
-                self._caffeinate_proc.terminate()
-                self._caffeinate_proc = None
-            except Exception:
-                pass
-
-        # Restore Windows standby timeout
-        if platform.system() == "Windows":
-            original = getattr(self, "_original_standby", None)
-            if original:
-                try:
-                    # Convert hex seconds back to minutes
-                    minutes = max(1, int(original, 16) // 60)
-                    _sp.run(
-                        ["powercfg", "/change", "standby-timeout-ac",
-                         str(minutes)],
-                        capture_output=True, timeout=5,
-                    )
-                except Exception:
-                    # Fallback: restore to 30 minutes
-                    _sp.run(
-                        ["powercfg", "/change", "standby-timeout-ac", "30"],
-                        capture_output=True, timeout=5,
-                    )
-            log.info("Sleep prevention stopped (standby restored)")
+        """Restore normal sleep behavior. Safe to call repeatedly."""
+        self._sleep_preventer.stop()
 
     def _emit_timing(self, timing_callback, stage_name, start_time):
         """Emit timing if callback is set."""
@@ -386,6 +381,16 @@ class InsightsEngine:
 
         run_id = self._store.generate_run_id()
         total = len(submissions)
+
+        # Build submission URL template — used to give teachers one-click access
+        # to the raw Canvas submission for any student, especially skip records.
+        _canvas_base = (
+            self._api.base_url.rstrip("/") if self._api and getattr(self._api, "base_url", None) else ""
+        )
+        def _submission_url(sid: str) -> Optional[str]:
+            if not _canvas_base:
+                return None
+            return f"{_canvas_base}/courses/{course_id}/assignments/{assignment_id}/submissions/{sid}"
 
         # Create run in store
         self._store.create_run(
@@ -698,6 +703,7 @@ class InsightsEngine:
                         emotional_notes=reason,
                         notable_quotes=[],
                         word_count=wc,
+                        submission_url=_submission_url(sid),
                     )
                     # Persist Canvas metadata for trajectory comparator
                     record.submitted_at = meta.get(sid, {}).get("submitted_at")
@@ -708,6 +714,22 @@ class InsightsEngine:
                         run_id, sid, name, record.model_dump_json(),
                         submission_text=body,
                     )
+                    # Surface prior engagement context for skip cards in the GUI
+                    try:
+                        from insights.trajectory_context import build_trajectory_context
+                        _traj = build_trajectory_context(
+                            self._store, student_id=sid, course_id=str(course_id),
+                            current_run_id=run_id, current_word_count=wc,
+                            current_submitted_at=record.submitted_at or "",
+                        )
+                        if _traj:
+                            record.observation = _traj
+                            self._store.save_coding(
+                                run_id, sid, name, record.model_dump_json(),
+                                submission_text=body,
+                            )
+                    except Exception:
+                        pass
                     preview_data = record.model_dump()
                     preview_data["_original_text"] = body[:300] if body.strip() else reason
                     emit_result("coding", preview_data)
@@ -730,6 +752,7 @@ class InsightsEngine:
                             "gibberish_reason": quick_sub.gibberish_reason,
                             "gibberish_detail": quick_sub.gibberish_detail,
                         },
+                        submission_url=_submission_url(sid),
                     )
                     # Persist Canvas metadata for trajectory comparator
                     record.submitted_at = meta.get(sid, {}).get("submitted_at")
@@ -847,6 +870,7 @@ class InsightsEngine:
 
                     # Persist Canvas metadata for trajectory comparator
                     record.submitted_at = meta.get(sid, {}).get("submitted_at")
+                    record.submission_url = _submission_url(sid)
                     if quick_sub:
                         record.unknown_word_rate = quick_sub.unknown_word_rate
 
@@ -1010,6 +1034,14 @@ class InsightsEngine:
                 if self._cancelled:
                     return None
 
+                # Skip students whose submissions couldn't be analyzed — running
+                # wellbeing on empty text produces arbitrary classifications that
+                # look like real data and confuse the teacher.
+                if _is_skip_record(record):
+                    log.debug("Wellbeing: skipping %s (skip record: %s)",
+                              record.student_name, record.theme_tags)
+                    continue
+
                 sid = record.student_id
                 body = texts.get(sid, "")
 
@@ -1019,6 +1051,7 @@ class InsightsEngine:
                     backend,
                     student_name=record.student_name,
                     submission_text=body,
+                    assignment_prompt=assignment_prompt,
                 )
                 record.wellbeing_axis = wb["axis"]
                 record.wellbeing_signal = wb["signal"]
@@ -1076,6 +1109,7 @@ class InsightsEngine:
                     checkin_backend,
                     student_name=record.student_name,
                     submission_text=body,
+                    assignment_prompt=assignment_prompt,
                 )
                 record.checkin_flag = ci["check_in"]
                 record.checkin_reasoning = ci["reasoning"]
@@ -1120,6 +1154,14 @@ class InsightsEngine:
             for i, record in enumerate(coding_records):
                 if self._cancelled:
                     return None
+
+                # Skip students whose submissions couldn't be analyzed — an
+                # observation on empty text is an empty string at best, a
+                # hallucinated fabrication at worst.
+                if _is_skip_record(record):
+                    log.debug("Observations: skipping %s (skip record: %s)",
+                              record.student_name, record.theme_tags)
+                    continue
 
                 sid = record.student_id
                 body = texts.get(sid, "")
@@ -1890,6 +1932,7 @@ class InsightsEngine:
 
                     # Persist Canvas metadata for trajectory comparator
                     record.submitted_at = sub_meta.get("submitted_at")
+                    record.submission_url = _submission_url(sid)
                     if quick_sub:
                         record.unknown_word_rate = quick_sub.unknown_word_rate
 
@@ -1899,6 +1942,24 @@ class InsightsEngine:
                         run_id, sid, name, record.model_dump_json(),
                         submission_text=body,
                     )
+                    # Surface prior engagement context for skip cards in the GUI
+                    if _is_skip_record(record):
+                        try:
+                            from insights.trajectory_context import build_trajectory_context
+                            _traj = build_trajectory_context(
+                                self._store, student_id=sid,
+                                course_id=str(course_id) if course_id else "",
+                                current_run_id=run_id, current_word_count=wc,
+                                current_submitted_at=record.submitted_at or "",
+                            )
+                            if _traj:
+                                record.observation = _traj
+                                self._store.save_coding(
+                                    run_id, sid, name, record.model_dump_json(),
+                                    submission_text=body,
+                                )
+                        except Exception:
+                            pass
                     preview_data = record.model_dump()
                     preview_data["_original_text"] = body[:300]
                     emit_result("coding", preview_data)
@@ -1945,6 +2006,7 @@ class InsightsEngine:
                             backend,
                             student_name=record.student_name,
                             submission_text=body,
+                            assignment_prompt=assignment_prompt,
                         )
                         record.wellbeing_axis = wb["axis"]
                         record.wellbeing_signal = wb["signal"]
@@ -2010,6 +2072,7 @@ class InsightsEngine:
                             checkin_backend,
                             student_name=record.student_name,
                             submission_text=body,
+                            assignment_prompt=assignment_prompt,
                         )
                         record.checkin_flag = ci["check_in"]
                         record.checkin_reasoning = ci["reasoning"]

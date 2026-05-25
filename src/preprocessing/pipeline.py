@@ -60,6 +60,111 @@ def _clean_html(text: str) -> str:
     return re.sub(r'<[^>]+>', ' ', text or "").strip()
 
 
+def _rtf_to_text_fallback(content: bytes) -> str:
+    """Minimal RTF extractor requiring no external dependencies.
+
+    Handles the common case: student prose with basic RTF formatting.
+    Strips control words, decodes hex escapes, converts paragraph marks
+    to newlines. Sufficient for T&Q journals, project writeups, etc.
+    """
+    import re
+    try:
+        text = content.decode("latin-1")
+    except Exception:
+        text = content.decode("utf-8", errors="replace")
+
+    # Destination groups ({\* ...}) — internal RTF metadata, drop entirely
+    text = re.sub(r'\{\\[*][^{}]*\}', '', text)
+    # Hex character escapes \'XX → unicode char
+    text = re.sub(
+        r"\\'([0-9a-fA-F]{2})",
+        lambda m: chr(int(m.group(1), 16)),
+        text,
+    )
+    # Paragraph and line breaks → newlines
+    text = re.sub(r'\\par\b\s?', '\n', text)
+    text = re.sub(r'\\line\b\s?', '\n', text)
+    # Strip all remaining control words (\word or \word-N or \wordN)
+    text = re.sub(r'\\[a-zA-Z]+[-]?\d*\s?', '', text)
+    # Remove remaining RTF structural characters
+    text = re.sub(r'[{}\\]', '', text)
+    # Normalise whitespace
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
+def _extract_pdf_text(content: bytes, filename: str) -> Optional[str]:
+    """Extract text from a PDF, with three-tier fallback.
+
+    1. pdfminer.six — fast text-layer extraction
+    2. PyMuPDF (fitz) — more robust text-layer extraction
+    3. pytesseract OCR — for scanned/image-only PDFs (via PyMuPDF page rendering)
+    """
+    import io
+
+    # --- Tier 1: pdfminer ---
+    try:
+        from pdfminer.high_level import extract_text as _pm_extract
+        text = _pm_extract(io.BytesIO(content))
+        if text and text.strip():
+            return text
+        # Empty result — don't return yet, fall through to pymupdf
+    except ImportError:
+        pass
+    except Exception as e:
+        logger.debug("pdfminer could not parse '%s': %s", filename, e)
+
+    # --- Tier 2 + 3: PyMuPDF (text extraction, then OCR fallback) ---
+    try:
+        import fitz  # pymupdf
+        with fitz.open(stream=content, filetype="pdf") as doc:
+            # Text layer extraction
+            text = "\n".join(page.get_text() for page in doc)
+            if text.strip():
+                return text
+
+            # Empty → scanned PDF, try OCR
+            try:
+                import pytesseract
+                from PIL import Image
+                ocr_parts = []
+                for page in doc:
+                    pix = page.get_pixmap(dpi=200)
+                    img = Image.open(io.BytesIO(pix.tobytes("png")))
+                    page_text = pytesseract.image_to_string(img)
+                    if page_text.strip():
+                        ocr_parts.append(page_text)
+                if ocr_parts:
+                    logger.info(
+                        "OCR extracted text from scanned PDF '%s' (%d page(s))",
+                        filename, len(ocr_parts),
+                    )
+                    return "\n\n".join(ocr_parts)
+                logger.warning(
+                    "PDF '%s' produced no text via OCR — may be blank or corrupted",
+                    filename,
+                )
+            except ImportError:
+                logger.warning(
+                    "PDF '%s' has no text layer and pytesseract is not installed; "
+                    "run: pip install pytesseract (also requires Tesseract binary)",
+                    filename,
+                )
+            except Exception as e:
+                logger.warning("OCR failed for PDF '%s': %s", filename, e)
+
+    except ImportError:
+        logger.warning(
+            "PDF '%s' could not be fully processed — install pymupdf for better "
+            "extraction and scanned-PDF support: pip install pymupdf",
+            filename,
+        )
+    except Exception as e:
+        logger.warning("PyMuPDF could not parse PDF '%s': %s", filename, e)
+
+    return None
+
+
 def _extract_text_attachment(attachment: Dict, headers: Dict) -> Optional[str]:
     """
     Extract text from a non-audio/image attachment.
@@ -143,29 +248,22 @@ def _extract_text_attachment(attachment: Dict, headers: Dict) -> Optional[str]:
                 return None
 
         elif ext == ".pdf":
-            try:
-                import io
-                from pdfminer.high_level import extract_text
-                return extract_text(io.BytesIO(content))
-            except ImportError:
-                logger.warning(
-                    "pdfminer.six not installed — cannot extract text from PDF '%s'. "
-                    "Install with: pip install pdfminer.six",
-                    filename,
-                )
-                return None
+            return _extract_pdf_text(content, filename)
 
         elif ext == ".rtf":
             try:
                 from striprtf.striprtf import rtf_to_text
                 return rtf_to_text(content.decode("utf-8", errors="replace"))
             except ImportError:
-                logger.warning(
-                    "striprtf not installed — cannot extract text from RTF '%s'. "
-                    "Install with: pip install striprtf",
+                # striprtf not installed — fall back to a regex-based extractor.
+                # Handles typical student prose submissions (control words, hex
+                # escapes, paragraph breaks) without any external dependency.
+                logger.info(
+                    "striprtf not available for '%s' — using built-in RTF extractor "
+                    "(install striprtf for higher fidelity)",
                     filename,
                 )
-                return None
+                return _rtf_to_text_fallback(content)
 
         return None
 

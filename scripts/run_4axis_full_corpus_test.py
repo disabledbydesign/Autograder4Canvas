@@ -593,10 +593,10 @@ notes — which observations you weighted and why",
 "shared_in_faculty_lounge": "Tell a colleague what this student is reaching
 for in their work. Start with what they're doing analytically — the concepts
 they're grappling with, the connections they're making, where their thinking
-is going. Then, where the student describes specific conditions in their
-life or family in their writing, surface those in the student's own words
-using quotation marks. Show both what's striking intellectually and what's
-present materially.",
+is going. Where the student describes specific conditions in their life or
+family in their writing, surface those in the student's own words using
+quotation marks. Not every student will have specific conditions to surface
+— focus only on what is in the writing.",
 "confidence": 0.0-1.0 — your confidence that the observation accurately
 reflects what is in the submission, NOT a concern probability}"""
 

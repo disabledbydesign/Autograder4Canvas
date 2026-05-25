@@ -1,0 +1,58 @@
+# GUI cleanup before testing
+
+0. Pre-revision steps:
+    a. Before you begin, search for skills or other resources that will help you design everything. 
+    b. Let's commit before making any changes. 
+    c. My experience is that working on the gui is very iterative - because agents have different spatial perception of the gui systems than humans. However, Anthropic just released a new "Design" system. SHould we use that?
+    d. I no longer have access to my Canvas account, so the data isn't populating. If we have enough data saved that we can run the system, we should do so as a second layer of steps. But right now, im not seeing the material populated. So we'll need to solve that. 
+    e. Color coding: We use three colors - amber, blue, and pink. Blue tends to be associated with AIC. Pink with Insights. 
+
+1. Review tab needs the most work. Right now, it has three subtabs - grading review, engagement analysis, and insights. That's good. "Run" buttons also tend to be mink. 
+    a. In insights, however, the current set up is a whole new engine - users have to run the insights system ontop of the other two systems. So within the insights subtab, there are further subtabs: New Analysis, Live, and Results. So that's confusing.
+        i. New Analysis probably needs to be folded into Quick Run and Bulk Run, if it hasn't already been. 
+        ii. Live is a very excellent stream of the process while it runs. But it lives in an awkward place. We should think about where it belongs in user flows. Our current system can run python and LLM analysis. We don't want multiple runs going simultaniously unless they cna be handled gracefully in parallel or queued. So either live becomes its own tab, or it becomes a screen that blocks multiple runs. Or something else, if you have suggestions. But the actual layout is good and polished. 
+        iii. Results is the only material that should live in 
+        iv. in the subtabs within insights, the presentation of material isn't always great for users. Long prose gets cut off. I dont remember exactly and I cant get actual data to surface in it to verify, but I remember there being some basic layout work we had to do. 
+    b. In Engagement Analysis:
+        i. There's a "run AIC" button. But that itself is confusing in the review section. 
+        ii. low priority: when the user clicks "How it works" they get a lot of verbose content. The layout is weird (there are lots of little boxes around text blocks. it would be easier to share a screencap and tell you what the issue is). I think a more progressive disclosure with collapsed text blocks would be important. Also, the main text explination is misisng hte most important part - the system can track longitudal and classwide cheating patterns - on a collective level, these are burnout signals. Also our systme is best for catching people who dont know how to cheat with AI well - smoking guns mean AI was definitely used, but again, treating these as collective signals helps address some of that issue. 
+    c. Grading Review: It's hard to tell when the system isn't populating with student data, but it looks like there are two seperate panels for selecting assignments. The other two subtabs do not have this. 
+2. Bulk run
+    a. I can't test this wihout canvas access, so i need a way to see things like, the window that comes up when the user clicks "run autograder"
+    b. What is "preview run?" Why is that important?
+    c. The engagement analysis options (three mutually exclusive buttons) is too wide to fit in the window. This is probably handled better by 3 toggles: Grade, AIC, and Insights. but i think we have a seperate window that pops open that has those options. Perhaps we just make it uniform with Quick Run, which is more polished, in terms of how Quick run handles that. 
+    d. Let's change "Grade absent work as Incomplete" to "Mark absent work as Incomplete."
+    e. The divider uses an outdated graphic - the correct style is unevently brightened - the vibe is as if it were lit from behind by a bulb. 
+    f. In the templates, there is no toggle for running Insights on certain assignments. 
+        i. Also in templates, the "add, "delete," and "default buttons" are squished - the button is too narrow to fit all the text. 
+        ii. Each of the panels in templates has an akward amber bar between them. Not sure what this is. 
+        iii. Linebreaks use the flat style - should use our style where there is more dimension and gradient in the brightness. 
+        iv. This window is the only place where red buttons exist. Not inherently bad, but somewhat akward. I'm not sure what the best fix is.
+        v. the "templates" panel should be widened so that it doesnt have a left-right scroll bar. In general, i want to avoid left/right scrollbars. 
+        vi. There's a lot of customizability for the AIC in templates - probably too much. AIC on and off is good. Invert sentence structure is good. Assignment mode is probably good but i dont remember how works in the backend. personal voice as authenticity signal is probably good in any case. Is fine tune signal weights redundant with the main fine tuning in the settings, or are these seperate? School context isn't going to change by assignment. Lenient is confusing to me because isn't the whole point that it creates a spectrum of flags, not a "yes/no" result? And students with relatively more flags are more suspicious? 
+3. Is it possible to make the text highlightable? This is most important in the insights systems, to allow for copy/pasting. 
+4. Settings tab:
+    a. We need to check that all the buttons work. For example, when I try to change the font size, nothing changes. In fact, lets check the wiring on all buttons across the whole system - not just settings, but all tabs. 
+    b. The settings is wider than the window. Right now, the left-hand widgets could be reduced in width (for example, institution profile is way too large). Lets try a reduction in width to 60% of the current width. 
+    c. In "Accessibility," what does it mean to warn when grades will be reinterpreted? 
+        i. And I think that the translate/transcribe options maybe go in a different box, since that's about how student assignments are managed. They should be near where the user selects the model for these things. 
+    d. Engagement analysis should be its own widgit box. And the fine-tune signals button is way too wide. And there's a lot of empty space at the bottom. 
+    e. "Insights & AI" should just be "Insights." 
+        i. in insights, the user has to type out the model name. That's fragile for non tech-users. I think we have a setup system that walks users through the installing, so these should be drop downs of available models. 
+        ii. There are also options for institutional api - but these are mutually exclusive, I think. A user wouldnt need to use a local model if they have an institutional api. 
+        iii. Also, dont we have a api system that enriches the insight material? It sends only ferpa-compliant info, and the user would pay for it (probably on open router), right? If so, i dont see that config here. 
+    f. What is the "deepening pass" about? 
+    g. the wisper model for transcription is in a seperate place than the vision model. So that's weird. Shouldn't they all be in the same place?
+        i. Also, for the options in the drop down, the descriptions aren't consistent - some include speed and quality, others include size. Its unclear what "large quality" might mean. Also, why run medium with the v3 turbo is the same size and (I assume) better?
+    h. All the material below pause between prompts has explinations, but they are in bright text - it's too much bright text and pulls the user's eye away from what matters. 
+    i. In the description for overnight analysis, the text assumes the OS is a mac
+    j. Why is "generate student feedback" a toggle in settings? It seems like it would be better located in the quick run and bulk run flows. 
+5. Let's make gemma 4 (the thinking model) the system defaut for new users. We'll want to test it soon, but i think it'll do good and it'll run on her laptop. The width of the input boxes are a bit too wide. could be reduced to 60% of current width. 
+6. We should check the models we use and see if we should update any of them. We want to make sure they'll work on windows as well as mac. It's been a while since we've decided on our models, so potentially worth looking for upgrades. 
+7. We should look over the whole gui and make sure everything is agnostic for different OS's. 
+8. essential gui windows i have not yet checked:
+    a. First time start up. 
+    b. Quick run or bulk run "Run" windows.
+    c. Insights subtabs
+    d. Other pop up windows that require student data. 
+  I think we should create a system to pull up each window and allow me to review them. What we can automate before that is making sure that the visual use of space if good - that everything is easily parsable, that the text isn't stuck in boxes too small to render or so wide it looks awkard, and that everything uses our polished, nice graphic styles (we have some competing flat styles, including the line break bar mentioned above). 

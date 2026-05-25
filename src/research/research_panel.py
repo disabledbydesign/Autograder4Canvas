@@ -238,6 +238,116 @@ class _ResearchAssignRow(QWidget):
 
 
 # ---------------------------------------------------------------------------
+# _OfflineRunRow — clickable row for DB-backed run browser (no Canvas)
+# ---------------------------------------------------------------------------
+
+class _OfflineRunRow(QWidget):
+    selected = Signal(object)   # emits the run dict
+
+    def __init__(self, run: dict, parent=None):
+        super().__init__(parent)
+        self._run      = run
+        self._selected = False
+        self._hovered  = False
+
+        date_raw = run.get("completed_at") or run.get("started_at") or ""
+        date_str = ""
+        if date_raw:
+            try:
+                dt       = datetime.fromisoformat(date_raw.replace("Z", "+00:00"))
+                date_str = dt.strftime("%b %-d")
+            except (ValueError, TypeError):
+                date_str = date_raw[:10]
+
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(10, 5, 8, 5)
+        outer.setSpacing(6)
+        outer.addSpacing(14)
+
+        text = QVBoxLayout()
+        text.setContentsMargins(0, 0, 0, 0)
+        text.setSpacing(1)
+
+        self._name_lbl = QLabel(run.get("assignment_name", "Untitled"))
+        self._name_lbl.setWordWrap(True)
+        self._name_lbl.setStyleSheet(
+            f"color: {PHOSPHOR_MID}; font-size: {px(12)}px;"
+            f" font-weight: bold; background: transparent; border: none;"
+        )
+        text.addWidget(self._name_lbl)
+
+        if date_str:
+            date_lbl = QLabel(date_str)
+            date_lbl.setStyleSheet(
+                f"color: {PHOSPHOR_DIM}; font-size: {px(10)}px;"
+                f" background: transparent; border: none;"
+            )
+            text.addWidget(date_lbl)
+
+        outer.addLayout(text, 1)
+        self.setStyleSheet("background: transparent;")
+        self.setMouseTracking(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def run_id(self) -> str:
+        return self._run.get("run_id", "")
+
+    def set_selected(self, v: bool) -> None:
+        self._selected = v
+        self._name_lbl.setStyleSheet(
+            f"color: {PHOSPHOR_HOT if v else PHOSPHOR_MID}; font-size: {px(12)}px;"
+            f" font-weight: bold; background: transparent; border: none;"
+        )
+        self.update()
+
+    def mousePressEvent(self, event):
+        if not self._selected:
+            self.selected.emit(self._run)
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event):
+        is_sel = self._selected
+        is_hov = self._hovered
+        if is_sel or is_hov:
+            p = QPainter(self)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.fillRect(self.rect(), QColor("#0A0800"))
+            glow_cx = self.width() * 0.18
+            glow_cy = self.height() * 0.50
+            center_col = QColor(204, 82, 130, 60) if is_sel else QColor(240, 168, 48, 38)
+            clip = QPainterPath()
+            clip.addRect(self.rect())
+            p.save()
+            p.setClipPath(clip)
+            p.setPen(Qt.PenStyle.NoPen)
+            grad = QRadialGradient(glow_cx, glow_cy, self.width() * 0.80)
+            grad.setColorAt(0.0, center_col)
+            grad.setColorAt(0.7, QColor(center_col.red(), center_col.green(),
+                                        center_col.blue(), 8))
+            grad.setColorAt(1.0, QColor(0, 0, 0, 0))
+            p.setBrush(grad)
+            p.drawRect(self.rect())
+            p.restore()
+            dot_x, dot_y = 8.0, self.height() / 2.0
+            p.setPen(Qt.PenStyle.NoPen)
+            dot_color = QColor(ROSE_ACCENT) if is_sel else QColor(PHOSPHOR_DIM)
+            p.setBrush(dot_color)
+            p.drawEllipse(int(dot_x - 3), int(dot_y - 3), 6, 6)
+            p.end()
+        else:
+            super().paintEvent(event)
+
+
+# ---------------------------------------------------------------------------
 # ResearchPanel
 # ---------------------------------------------------------------------------
 
@@ -264,7 +374,11 @@ class ResearchPanel(QFrame):
         # student_id -> {"card": QFrame, "track_a": QFrame, ...}
         self._student_cards: Dict[str, dict] = {}
 
+        self._offline_run_rows: List[_OfflineRunRow] = []
+
         self._build_ui()
+        if self._api is None and self._store:
+            self._populate_offline_runs()
 
     # ── UI construction ──────────────────────────────────────────────────────
 
@@ -335,8 +449,9 @@ class ResearchPanel(QFrame):
         lo.setContentsMargins(0, 8, 0, 8)
         lo.setSpacing(0)
 
-        # ── Courses ──
-        lo.addWidget(make_section_label("  Courses"))
+        # ── Courses / Stored Runs ──
+        _offline = self._api is None
+        lo.addWidget(make_section_label("  Stored Runs" if _offline else "  Courses"))
         lo.addSpacing(2)
 
         self._course_scroll = QScrollArea()
@@ -349,7 +464,8 @@ class ResearchPanel(QFrame):
             + _scrollbar_qss()
         )
         self._course_scroll.setMinimumHeight(150)
-        self._course_scroll.setMaximumHeight(260)
+        if not _offline:
+            self._course_scroll.setMaximumHeight(260)
 
         self._course_content = QWidget()
         self._course_content.setStyleSheet(f"background: {BG_INSET};")
@@ -358,14 +474,17 @@ class ResearchPanel(QFrame):
         self._course_lo.setSpacing(1)
         self._course_lo.addStretch()
         self._course_scroll.setWidget(self._course_content)
-        lo.addWidget(self._course_scroll)
+        lo.addWidget(self._course_scroll, 1 if _offline else 0)
 
-        lo.addSpacing(4)
-        lo.addWidget(make_h_rule())
-        lo.addSpacing(4)
+        if not _offline:
+            lo.addSpacing(4)
+            lo.addWidget(make_h_rule())
+            lo.addSpacing(4)
 
-        # ── Assignments ──
-        lo.addWidget(make_section_label("  Assignments"))
+        # ── Assignments (online only) ──
+        self._assign_section_lbl = make_section_label("  Assignments")
+        self._assign_section_lbl.setVisible(not _offline)
+        lo.addWidget(self._assign_section_lbl)
         lo.addSpacing(2)
 
         self._assign_scroll = QScrollArea()
@@ -377,8 +496,9 @@ class ResearchPanel(QFrame):
             f"QScrollArea {{ border: none; background: {BG_INSET}; }}"
             + _scrollbar_qss()
         )
-        self._assign_scroll.setMinimumHeight(100)
-        self._assign_scroll.setMaximumHeight(200)
+        self._assign_scroll.setMinimumHeight(0 if _offline else 100)
+        self._assign_scroll.setMaximumHeight(0 if _offline else 200)
+        self._assign_scroll.setVisible(not _offline)
 
         self._assign_content = QWidget()
         self._assign_content.setStyleSheet(f"background: {BG_INSET};")
@@ -427,6 +547,8 @@ class ResearchPanel(QFrame):
         plo.addWidget(self._prior_track_lbl)
         lo.addWidget(self._prior_frame)
         lo.addSpacing(10)
+        if _offline:
+            self._prior_frame.setVisible(False)
 
         # ── Run buttons ──
         btn_wrap = QFrame()
@@ -435,9 +557,14 @@ class ResearchPanel(QFrame):
         blo.setContentsMargins(8, 0, 8, 0)
         blo.setSpacing(6)
 
-        self._btn_run_missing = QPushButton("Run Missing: Track A")
-        make_secondary_button(self._btn_run_missing)
-        self._btn_run_missing.setMinimumHeight(30)
+        self._btn_run_missing = QPushButton(
+            "Run Track A" if _offline else "Run Missing: Track A"
+        )
+        if _offline:
+            make_run_button(self._btn_run_missing)
+        else:
+            make_secondary_button(self._btn_run_missing)
+        self._btn_run_missing.setMinimumHeight(32 if _offline else 30)
         self._btn_run_missing.setVisible(False)
         self._btn_run_missing.clicked.connect(self._on_run_missing)
         blo.addWidget(self._btn_run_missing)
@@ -446,6 +573,7 @@ class ResearchPanel(QFrame):
         make_run_button(self._btn_run_all)
         self._btn_run_all.setMinimumHeight(32)
         self._btn_run_all.setEnabled(False)
+        self._btn_run_all.setVisible(not _offline)
         self._btn_run_all.clicked.connect(self._on_run_all)
         blo.addWidget(self._btn_run_all)
 
@@ -461,7 +589,8 @@ class ResearchPanel(QFrame):
         )
         lo.addWidget(self._progress_lbl)
 
-        lo.addStretch()
+        if not _offline:
+            lo.addStretch()
         lo.addWidget(make_h_rule())
         lo.addSpacing(6)
 
@@ -479,12 +608,27 @@ class ResearchPanel(QFrame):
         self._btn_export_json.clicked.connect(self._on_export_json)
         elo.addWidget(self._btn_export_json)
 
-        self._btn_export_csv = QPushButton("Export CSV")
+        self._btn_export_csv = QPushButton("CSV (anon)")
         make_secondary_button(self._btn_export_csv)
         self._btn_export_csv.setMinimumHeight(28)
         self._btn_export_csv.setEnabled(False)
+        self._btn_export_csv.setToolTip(
+            "Anonymized CSV — student IDs replaced with anon_001, anon_002 etc. "
+            "For research / sharing externally."
+        )
         self._btn_export_csv.clicked.connect(self._on_export_csv)
         elo.addWidget(self._btn_export_csv)
+
+        self._btn_export_csv_named = QPushButton("CSV (named)")
+        make_secondary_button(self._btn_export_csv_named)
+        self._btn_export_csv_named.setMinimumHeight(28)
+        self._btn_export_csv_named.setEnabled(False)
+        self._btn_export_csv_named.setToolTip(
+            "CSV with real student names + all 3 tracks. "
+            "For your own teaching use — do not share externally."
+        )
+        self._btn_export_csv_named.clicked.connect(self._on_export_csv_named)
+        elo.addWidget(self._btn_export_csv_named)
 
         lo.addWidget(exp_wrap)
         return sidebar
@@ -516,8 +660,8 @@ class ResearchPanel(QFrame):
         self._summary_lo.setSpacing(4)
         lo.addWidget(self._summary_frame)
 
-        # Column headers
-        lo.addWidget(self._build_col_headers())
+        # Context strip (replaces static column headers)
+        lo.addWidget(self._build_context_strip())
 
         # Scroll area for student cards
         self._cards_scroll = QScrollArea()
@@ -536,7 +680,11 @@ class ResearchPanel(QFrame):
         self._cards_lo.setContentsMargins(0, 0, 0, 0)
         self._cards_lo.setSpacing(8)
 
-        self._empty_lbl = QLabel("Select an assignment to begin.")
+        empty_text = (
+            "Select a stored run to begin." if self._api is None
+            else "Select an assignment to begin."
+        )
+        self._empty_lbl = QLabel(empty_text)
         self._empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_lbl.setStyleSheet(
             f"color: {PHOSPHOR_GLOW}; font-size: {px(13)}px;"
@@ -549,37 +697,68 @@ class ResearchPanel(QFrame):
 
         return pane
 
-    def _build_col_headers(self) -> QFrame:
+    def _build_context_strip(self) -> QFrame:
+        """Strip showing currently-selected run context: course · assignment · N · date."""
         hdr = QFrame()
+        hdr.setObjectName("ctxStrip")
         hdr.setStyleSheet(
-            f"QFrame {{ background: transparent; border: none;"
-            f" border-bottom: 1px solid {BORDER_DARK}; }}"
+            "QFrame#ctxStrip {"
+            f"  background: transparent; border: none;"
+            f"  border-bottom: 1px solid {BORDER_DARK};"
+            "}"
         )
         hlo = QHBoxLayout(hdr)
-        hlo.setContentsMargins(4, 0, 4, 6)
-        hlo.setSpacing(8)
+        hlo.setContentsMargins(8, 4, 8, 8)
+        hlo.setSpacing(10)
 
-        name_hdr = QLabel("STUDENT")
-        name_hdr.setFixedWidth(130)
-        name_hdr.setStyleSheet(
-            f"color: {PHOSPHOR_DIM}; font-size: {px(10)}px; font-weight: bold;"
+        self._ctx_course_lbl = QLabel("")
+        self._ctx_course_lbl.setStyleSheet(
+            f"color: {ROSE_ACCENT}; font-size: {px(11)}px; font-weight: bold;"
             f" letter-spacing: 1px; background: transparent; border: none;"
         )
-        hlo.addWidget(name_hdr)
+        hlo.addWidget(self._ctx_course_lbl)
 
-        for label, color in [
-            ("TRACK A  ·  BINARY CONCERN", BURN_RED),
-            ("TRACK B  ·  4-AXIS + CHECK-IN", "#D87020"),
-            ("TRACK C  ·  OBSERVATION", TERM_GREEN),
-        ]:
-            lbl = QLabel(label)
-            lbl.setStyleSheet(
-                f"color: {color}; font-size: {px(10)}px; font-weight: bold;"
-                f" letter-spacing: 1px; background: transparent; border: none;"
-            )
-            hlo.addWidget(lbl, 1)
+        self._ctx_assign_lbl = QLabel("")
+        self._ctx_assign_lbl.setStyleSheet(
+            f"color: {PHOSPHOR_HOT}; font-size: {px(11)}px; font-weight: bold;"
+            f" background: transparent; border: none;"
+        )
+        hlo.addWidget(self._ctx_assign_lbl)
+
+        hlo.addStretch()
+
+        self._ctx_meta_lbl = QLabel("")
+        self._ctx_meta_lbl.setStyleSheet(
+            f"color: {PHOSPHOR_DIM}; font-size: {px(10)}px;"
+            f" background: transparent; border: none;"
+        )
+        hlo.addWidget(self._ctx_meta_lbl)
 
         return hdr
+
+    def _update_context_strip(self) -> None:
+        """Refresh the context strip from current run state."""
+        if not hasattr(self, "_ctx_course_lbl"):
+            return
+        course = self._course_name or ""
+        assign = self._assignment_name or ""
+        n      = len(self._student_cards)
+        date   = self._prior_run_date or ""
+
+        self._ctx_course_lbl.setText(course)
+        self._ctx_assign_lbl.setText(f"·  {assign}" if assign else "")
+        meta_parts = []
+        if n:
+            meta_parts.append(f"{n} students")
+        if date:
+            meta_parts.append(f"run {date}")
+        self._ctx_meta_lbl.setText("  ·  ".join(meta_parts))
+
+    def _clear_context_strip(self) -> None:
+        if hasattr(self, "_ctx_course_lbl"):
+            self._ctx_course_lbl.setText("")
+            self._ctx_assign_lbl.setText("")
+            self._ctx_meta_lbl.setText("")
 
     # ── Course/assignment loading ─────────────────────────────────────────────
 
@@ -688,6 +867,67 @@ class ResearchPanel(QFrame):
         self._check_prior_run()
         self._btn_run_all.setEnabled(True)
 
+    # ── Offline run browser ───────────────────────────────────────────────────
+
+    def _populate_offline_runs(self) -> None:
+        """Fill the course scroll with stored runs grouped by course (no Canvas)."""
+        try:
+            runs = self._store.get_completed_runs()
+        except Exception as exc:
+            log.warning("Could not load stored runs: %s", exc)
+            return
+
+        # Group by course name, preserving newest-first order within each group
+        from collections import defaultdict
+        by_course: dict = defaultdict(list)
+        seen_courses: list = []
+        for r in runs:
+            cn = r.get("course_name") or "Unknown Course"
+            if cn not in seen_courses:
+                seen_courses.append(cn)
+            by_course[cn].append(r)
+
+        _clear_layout(self._course_lo)
+        self._offline_run_rows = []
+
+        for course_name in seen_courses:
+            hdr = QLabel(course_name)
+            hdr.setWordWrap(True)
+            hdr.setStyleSheet(
+                f"color: {PHOSPHOR_GLOW}; font-size: {px(10)}px; font-weight: bold;"
+                f" background: {BG_INSET}; border: none;"
+                f" padding: 8px 10px 4px 10px; letter-spacing: 0.5px;"
+            )
+            self._course_lo.insertWidget(self._course_lo.count(), hdr)
+
+            for run in by_course[course_name]:
+                row = _OfflineRunRow(run)
+                row.selected.connect(self._on_stored_run_clicked)
+                self._course_lo.insertWidget(self._course_lo.count(), row)
+                self._offline_run_rows.append(row)
+
+        self._course_lo.addStretch()
+        self._course_content.adjustSize()
+
+    def _on_stored_run_clicked(self, run: dict) -> None:
+        """Handle selection of a stored run in offline mode."""
+        self._course_id       = run.get("course_id")
+        self._course_name     = run.get("course_name", "")
+        self._assignment_id   = run.get("assignment_id")
+        self._assignment_name = run.get("assignment_name", "")
+        self._prior_run_id    = run.get("run_id")
+        self._prior_run_date  = (run.get("completed_at") or "")[:10]
+
+        for row in self._offline_run_rows:
+            row.set_selected(row.run_id() == self._prior_run_id)
+
+        self._prior_frame.setVisible(True)
+        self._update_prior_indicator(found=True)
+        self._btn_run_missing.setVisible(True)
+        self._btn_export_csv_named.setEnabled(True)
+        self._load_prior_run(self._prior_run_id)
+        self._update_context_strip()
+
     # ── Prior run detection ───────────────────────────────────────────────────
 
     def _check_prior_run(self) -> None:
@@ -713,6 +953,7 @@ class ResearchPanel(QFrame):
             self._prior_run_date = best.get("completed_at", "")[:10]
             self._update_prior_indicator(found=True)
             self._btn_run_missing.setVisible(True)
+            self._btn_export_csv_named.setEnabled(True)
             self._load_prior_run(self._prior_run_id)
         else:
             self._prior_run_id   = None
@@ -723,12 +964,15 @@ class ResearchPanel(QFrame):
 
     def _update_prior_indicator(self, found: bool = False) -> None:
         if found:
-            self._prior_lbl.setText(f"prior run: {self._prior_run_date}")
+            label = "run loaded" if self._api is None else f"prior run: {self._prior_run_date}"
+            self._prior_lbl.setText(label)
             self._prior_lbl.setStyleSheet(
                 f"color: {TERM_GREEN}; font-size: {px(10)}px;"
                 f" background: transparent; border: none;"
             )
-            self._prior_track_lbl.setText("Tracks B + C available  |  Track A missing")
+            self._prior_track_lbl.setText("Tracks B + C loaded  |  click Run Track A"
+                                          if self._api is None else
+                                          "Tracks B + C available  |  Track A missing")
             self._prior_track_lbl.setStyleSheet(
                 f"color: {PHOSPHOR_DIM}; font-size: {px(10)}px;"
                 f" background: transparent; border: none;"
@@ -754,8 +998,9 @@ class ResearchPanel(QFrame):
         self._reset_cards()
 
         for record in codings:
-            student_id   = record.get("student_id", "")
-            student_name = record.get("student_name", student_id)
+            student_id     = record.get("student_id", "")
+            student_name   = record.get("student_name", student_id)
+            submission_txt = record.get("submission_text", "") or ""
             raw = record.get("coding_record") or {}
             if isinstance(raw, str):
                 try:
@@ -771,13 +1016,20 @@ class ResearchPanel(QFrame):
                 "checkin_flag":      raw.get("checkin_flag"),
                 "checkin_reasoning": raw.get("checkin_reasoning", ""),
             }
-            track_c = {"observation": raw.get("observation", "")}
+            track_c    = {"observation": raw.get("observation", "")}
+            track_a    = raw.get("track_a_research") or {}
+            track_a_wb = raw.get("track_a_research_wb") or {}
 
-            self._ensure_card(student_id, student_name)
+            self._ensure_card(student_id, student_name, submission_txt)
             self._populate_track(student_id, "track_b", track_b)
             self._populate_track(student_id, "track_c", track_c)
+            if track_a:
+                self._populate_track(student_id, "track_a", track_a)
+            if track_a_wb:
+                self._populate_track(student_id, "track_a_wb", track_a_wb)
 
         self._empty_lbl.setVisible(False)
+        self._update_context_strip()
 
     # ── Run controls ──────────────────────────────────────────────────────────
 
@@ -861,9 +1113,12 @@ class ResearchPanel(QFrame):
         worker.finished.connect(self._on_worker_finished)
 
     def _on_worker_finished(self) -> None:
-        self._btn_run_all.setText("Run Full Comparison")
-        self._btn_run_all.setEnabled(bool(self._assignment_id))
-        self._btn_run_missing.setText("Run Missing: Track A")
+        if self._api is not None:
+            self._btn_run_all.setText("Run Full Comparison")
+            self._btn_run_all.setEnabled(bool(self._assignment_id))
+            self._btn_run_missing.setText("Run Missing: Track A")
+        else:
+            self._btn_run_missing.setText("Run Track A")
         self._btn_run_missing.setEnabled(True)
         if self._prior_run_id:
             self._btn_run_missing.setVisible(True)
@@ -878,6 +1133,25 @@ class ResearchPanel(QFrame):
         self._ensure_card(student_id, name)
         self._populate_track(student_id, track, data)
         self._empty_lbl.setVisible(False)
+        self._update_context_strip()
+
+        # Persist binary-concern track results so they survive panel restarts.
+        # Track A (combined) → coding_record.track_a_research
+        # Track A_wb (wellbeing-only) → coding_record.track_a_research_wb
+        # Tracks B and C are already persisted by the production pipeline.
+        persist_keys = {
+            "track_a":    "track_a_research",
+            "track_a_wb": "track_a_research_wb",
+        }
+        if track in persist_keys and self._store and self._prior_run_id:
+            try:
+                self._store.save_track_a_result(
+                    self._prior_run_id, student_id, data,
+                    key=persist_keys[track],
+                )
+            except Exception as exc:
+                log.warning("Could not persist %s result for %s: %s",
+                            track, student_id, exc)
 
     def _on_complete(self, result: dict) -> None:
         self._current_result = result
@@ -900,8 +1174,13 @@ class ResearchPanel(QFrame):
         """Remove all student cards and reset to empty state."""
         _clear_layout(self._cards_lo)
         self._student_cards = {}
+        self._clear_context_strip()
 
-        self._empty_lbl = QLabel("Select an assignment to begin.")
+        empty_text = (
+            "Select a stored run to begin." if self._api is None
+            else "Select an assignment to begin."
+        )
+        self._empty_lbl = QLabel(empty_text)
         self._empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_lbl.setStyleSheet(
             f"color: {PHOSPHOR_GLOW}; font-size: {px(13)}px;"
@@ -912,66 +1191,255 @@ class ResearchPanel(QFrame):
         self._summary_frame.setVisible(False)
         _clear_layout(self._summary_lo)
 
-    def _ensure_card(self, student_id: str, student_name: str) -> None:
+    def _ensure_card(
+        self, student_id: str, student_name: str, submission_text: str = ""
+    ) -> None:
         if student_id in self._student_cards:
+            # If card already exists but submission is now available, fill it
+            if submission_text:
+                info = self._student_cards[student_id]
+                if not info.get("submission_filled"):
+                    self._set_submission_text(student_id, submission_text)
             return
 
         # Insert before trailing stretch
         stretch_idx = self._cards_lo.count() - 1
-        card = self._build_card_skeleton(student_id, student_name)
+        card = self._build_card_skeleton(student_id, student_name, submission_text)
         self._cards_lo.insertWidget(stretch_idx, card)
 
-    def _build_card_skeleton(self, student_id: str, student_name: str) -> QFrame:
+    def _build_card_skeleton(
+        self, student_id: str, student_name: str, submission_text: str = ""
+    ) -> QFrame:
+        """Card layout (banner-with-tracks + side-by-side reading):
+              ┌────────────────────────────────────────────────────────┐
+              │ NAME   [TrackA pill]  [TrackB pill]  [CHECK-IN if flag]│
+              ├──────────────────────────┬─────────────────────────────┤
+              │ SUBMISSION (scrollable)  │ OBSERVATION (scrollable)     │
+              └──────────────────────────┴─────────────────────────────┘
+        """
         card = make_content_pane(f"card_{abs(hash(student_id)) % 100000:05d}")
-        card_lo = QHBoxLayout(card)
-        card_lo.setContentsMargins(10, 8, 10, 8)
+        card.setMinimumHeight(280)
+        card_lo = QVBoxLayout(card)
+        card_lo.setContentsMargins(0, 0, 0, 0)
         card_lo.setSpacing(0)
 
-        # Student name column
-        name_col = QFrame()
-        name_col.setFixedWidth(130)
-        name_col.setStyleSheet("background: transparent; border: none;")
-        nclo = QVBoxLayout(name_col)
-        nclo.setContentsMargins(0, 2, 8, 2)
-        nclo.setSpacing(2)
+        # ── Row 1: Name banner with tracks A and B inline ──
+        name_banner = QFrame()
+        name_banner.setObjectName(f"banner_{abs(hash(student_id)) % 100000:05d}")
+        name_banner.setStyleSheet(
+            f"QFrame#{name_banner.objectName()} {{"
+            f"  background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            f"    stop:0 #1A1208, stop:0.5 #221408, stop:1 #0A0800);"
+            f"  border: none; border-bottom: 1px solid {BORDER_AMBER};"
+            f"}}"
+        )
+        nblo = QHBoxLayout(name_banner)
+        nblo.setContentsMargins(14, 6, 14, 6)
+        nblo.setSpacing(8)
         nlbl = QLabel(student_name)
-        nlbl.setWordWrap(True)
         nlbl.setStyleSheet(
-            f"color: {PHOSPHOR_HOT}; font-size: {px(11)}px; font-weight: bold;"
+            f"color: {PHOSPHOR_HOT}; font-size: {px(13)}px; font-weight: bold;"
+            f" letter-spacing: 0.5px; background: transparent; border: none;"
+        )
+        nblo.addWidget(nlbl)
+        nblo.addStretch()
+
+        # Track A (combined) inline slot — labeled "A1"
+        nblo.addWidget(_dim_label("A1·", size=10))
+        track_a_slot = QFrame()
+        track_a_slot.setObjectName(f"{student_id}_track_a_body")
+        track_a_slot.setStyleSheet("background: transparent; border: none;")
+        ta_lo = QHBoxLayout(track_a_slot)
+        ta_lo.setContentsMargins(0, 0, 0, 0)
+        ta_lo.setSpacing(4)
+        ta_lo.addWidget(_glow_label("[not run]"))
+        nblo.addWidget(track_a_slot)
+
+        # divider dot
+        nblo.addWidget(_dim_label("·", size=12))
+
+        # Track A_wb (wellbeing-only) inline slot — labeled "A2"
+        nblo.addWidget(_dim_label("A2·", size=10))
+        track_a_wb_slot = QFrame()
+        track_a_wb_slot.setObjectName(f"{student_id}_track_a_wb_body")
+        track_a_wb_slot.setStyleSheet("background: transparent; border: none;")
+        ta_wb_lo = QHBoxLayout(track_a_wb_slot)
+        ta_wb_lo.setContentsMargins(0, 0, 0, 0)
+        ta_wb_lo.setSpacing(4)
+        ta_wb_lo.addWidget(_glow_label("[not run]"))
+        nblo.addWidget(track_a_wb_slot)
+
+        # divider dot
+        nblo.addWidget(_dim_label("·", size=12))
+
+        # Track B inline slot — labeled "B"
+        nblo.addWidget(_dim_label("B·", size=10))
+        track_b_slot = QFrame()
+        track_b_slot.setObjectName(f"{student_id}_track_b_body")
+        track_b_slot.setStyleSheet("background: transparent; border: none;")
+        tb_lo = QHBoxLayout(track_b_slot)
+        tb_lo.setContentsMargins(0, 0, 0, 0)
+        tb_lo.setSpacing(4)
+        tb_lo.addWidget(_glow_label("[not run]"))
+        nblo.addWidget(track_b_slot)
+
+        card_lo.addWidget(name_banner)
+
+        # ── Row 1.5: Rationale row (visible reasoning for tracks A and B) ──
+        rationale_frame = QFrame()
+        rationale_frame.setStyleSheet(
+            f"QFrame {{ background: {BG_INSET}; border: none;"
+            f" border-bottom: 1px solid {BORDER_DARK}; }}"
+        )
+        rlo = QVBoxLayout(rationale_frame)
+        rlo.setContentsMargins(14, 6, 14, 6)
+        rlo.setSpacing(3)
+
+        track_a_rationale = QLabel("")
+        track_a_rationale.setWordWrap(True)
+        track_a_rationale.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        track_a_rationale.setStyleSheet(
+            f"color: {PHOSPHOR_DIM}; font-size: {px(10)}px;"
             f" background: transparent; border: none;"
         )
-        nclo.addWidget(nlbl)
-        nclo.addStretch()
-        card_lo.addWidget(name_col)
+        track_a_rationale.setVisible(False)
+        rlo.addWidget(track_a_rationale)
 
-        # 3 track columns with vertical rules between them
-        track_cols = {}
-        for i, key in enumerate(("track_a", "track_b", "track_c")):
-            vline = QFrame()
-            vline.setFrameShape(QFrame.Shape.VLine)
-            vline.setStyleSheet(f"background: {BORDER_DARK}; border: none;")
-            vline.setFixedWidth(1)
-            card_lo.addWidget(vline)
+        track_a_wb_rationale = QLabel("")
+        track_a_wb_rationale.setWordWrap(True)
+        track_a_wb_rationale.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        track_a_wb_rationale.setStyleSheet(
+            f"color: {PHOSPHOR_DIM}; font-size: {px(10)}px;"
+            f" background: transparent; border: none;"
+        )
+        track_a_wb_rationale.setVisible(False)
+        rlo.addWidget(track_a_wb_rationale)
 
-            col = QFrame()
-            col.setObjectName(f"{student_id}_{key}")
-            col.setStyleSheet("background: transparent; border: none;")
-            col_lo = QVBoxLayout(col)
-            col_lo.setContentsMargins(8, 4, 8, 4)
-            col_lo.setSpacing(4)
-            empty_lbl = _glow_label("[not run]")
-            col_lo.addWidget(empty_lbl)
-            col_lo.addStretch()
-            card_lo.addWidget(col, 1)
-            track_cols[key] = col
+        track_b_rationale = QLabel("")
+        track_b_rationale.setWordWrap(True)
+        track_b_rationale.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        track_b_rationale.setStyleSheet(
+            f"color: {PHOSPHOR_DIM}; font-size: {px(10)}px;"
+            f" background: transparent; border: none;"
+        )
+        track_b_rationale.setVisible(False)
+        rlo.addWidget(track_b_rationale)
+
+        # Hide the whole frame until at least one rationale is filled
+        rationale_frame.setVisible(False)
+        card_lo.addWidget(rationale_frame)
+
+        # ── Row 2: Submission (left) and Observation (right) — both scrollable ──
+        body_row = QFrame()
+        body_row.setStyleSheet("background: transparent; border: none;")
+        body_lo = QHBoxLayout(body_row)
+        body_lo.setContentsMargins(0, 0, 0, 0)
+        body_lo.setSpacing(0)
+
+        sub_frame = self._build_scroll_section(
+            f"{student_id}_submission", "SUBMISSION", PHOSPHOR_GLOW
+        )
+        body_lo.addWidget(sub_frame, 1)
+
+        # vertical divider
+        vline = QFrame()
+        vline.setFrameShape(QFrame.Shape.VLine)
+        vline.setFixedWidth(1)
+        vline.setStyleSheet(f"background: {BORDER_DARK}; border: none;")
+        body_lo.addWidget(vline)
+
+        obs_frame = self._build_scroll_section(
+            f"{student_id}_track_c", "TRACK C  ·  OBSERVATION", TERM_GREEN
+        )
+        body_lo.addWidget(obs_frame, 1)
+
+        card_lo.addWidget(body_row, 1)
 
         self._student_cards[student_id] = {
-            "card": card,
-            "track_a": track_cols["track_a"],
-            "track_b": track_cols["track_b"],
-            "track_c": track_cols["track_c"],
+            "card":              card,
+            "track_a":           track_a_slot,
+            "track_a_wb":        track_a_wb_slot,
+            "track_b":           track_b_slot,
+            "track_c":           obs_frame.findChild(QFrame, f"{student_id}_track_c_body"),
+            "submission":        sub_frame.findChild(QFrame, f"{student_id}_submission_body"),
+            "submission_filled": False,
+            "rationale_frame":   rationale_frame,
+            "track_a_rationale":     track_a_rationale,
+            "track_a_wb_rationale":  track_a_wb_rationale,
+            "track_b_rationale":     track_b_rationale,
         }
+
+        if submission_text:
+            self._set_submission_text(student_id, submission_text)
+
         return card
+
+    def _build_scroll_section(
+        self, body_id: str, label: str, color: str
+    ) -> QFrame:
+        """Build a labeled, scrollable text section for the card body."""
+        wrap = QFrame()
+        wrap.setStyleSheet("background: transparent; border: none;")
+        wlo = QVBoxLayout(wrap)
+        wlo.setContentsMargins(12, 8, 12, 10)
+        wlo.setSpacing(4)
+
+        hdr = QLabel(label)
+        hdr.setStyleSheet(
+            f"color: {color}; font-size: {px(9)}px; font-weight: bold;"
+            f" letter-spacing: 1px; background: transparent; border: none;"
+        )
+        wlo.addWidget(hdr)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setMinimumHeight(180)
+        scroll.setStyleSheet(
+            f"QScrollArea {{ border: 1px solid {BORDER_DARK}; background: {BG_INSET};"
+            f"  border-radius: 3px; }}"
+            + _scrollbar_qss(width=6)
+        )
+
+        body = QFrame()
+        body.setObjectName(f"{body_id}_body")
+        body.setStyleSheet(f"background: {BG_INSET}; border: none;")
+        body_lo = QVBoxLayout(body)
+        body_lo.setContentsMargins(8, 6, 8, 6)
+        body_lo.setSpacing(4)
+        body_lo.addWidget(_glow_label("[empty]"))
+        body_lo.addStretch()
+        scroll.setWidget(body)
+
+        wlo.addWidget(scroll, 1)
+        return wrap
+
+    def _set_submission_text(self, student_id: str, text: str) -> None:
+        info = self._student_cards.get(student_id)
+        if not info:
+            return
+        body: QFrame = info.get("submission")
+        if not body:
+            return
+        lo = body.layout()
+        _clear_layout(lo)
+        lbl = QLabel(text)
+        lbl.setWordWrap(True)
+        lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        lbl.setStyleSheet(
+            f"color: {PHOSPHOR_MID}; font-size: {px(11)}px;"
+            f" background: transparent; border: none;"
+        )
+        lbl.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        lo.addWidget(lbl)
+        lo.addStretch()
+        info["submission_filled"] = True
 
     def _populate_track(self, student_id: str, track: str, data: dict) -> None:
         info = self._student_cards.get(student_id)
@@ -984,104 +1452,147 @@ class ResearchPanel(QFrame):
         _clear_layout(lo)
 
         if track == "track_a":
-            self._fill_track_a(lo, data)
+            self._fill_track_a(lo, data, info, rationale_key="track_a_rationale",
+                               label_prefix="BINARY (combined)")
+        elif track == "track_a_wb":
+            self._fill_track_a(lo, data, info, rationale_key="track_a_wb_rationale",
+                               label_prefix="BINARY (wellbeing-only)")
         elif track == "track_b":
-            self._fill_track_b(lo, data)
+            self._fill_track_b(lo, data, info)
         else:
             self._fill_track_c(lo, data)
 
-    def _fill_track_a(self, lo: QVBoxLayout, data: dict) -> None:
+    def _fill_track_a(
+        self, lo, data: dict, info: dict,
+        *, rationale_key: str = "track_a_rationale",
+        label_prefix: str = "BINARY CONCERN",
+    ) -> None:
+        """Fill a binary-concern track — pill + count in banner, rationale below.
+
+        Used for both Track A (combined scope) and Track A_wb (wellbeing-only).
+        rationale_key selects which rationale label to populate; label_prefix
+        is the header text in the rationale row.
+        """
         flagged    = data.get("flagged", False)
         concerns   = data.get("concerns") or []
         bias_warns = data.get("bias_warnings") or []
 
-        lo.addWidget(_axis_pill("FLAG" if flagged else "CLEAR"))
-        lo.addSpacing(2)
+        pill_text = "FLAG" if flagged else "CLEAR"
+        pill = _axis_pill(pill_text)
+        lo.addWidget(pill)
 
-        if not flagged:
-            lo.addWidget(_glow_label("no concerns detected"))
-        else:
-            for concern in concerns[:3]:
-                passage = (concern.get("flagged_passage") or "").strip()
-                why     = concern.get("why_flagged", "")
-                conf    = concern.get("confidence")
-                if passage:
-                    display = f'"{passage[:120]}…"' if len(passage) > 120 else f'"{passage}"'
-                    lo.addWidget(_mid_label(display, italic=True))
-                if why:
-                    is_bias = "⚠" in why
-                    w_lbl = QLabel(why[:200])
-                    w_lbl.setWordWrap(True)
-                    w_lbl.setStyleSheet(
-                        f"color: {'#D87020' if is_bias else PHOSPHOR_DIM};"
-                        f" font-size: {px(10)}px; background: transparent; border: none;"
-                    )
-                    lo.addWidget(w_lbl)
-                if conf is not None:
-                    lo.addWidget(_dim_label(f"conf: {float(conf):.2f}", size=9))
-                lo.addSpacing(2)
-
-        if bias_warns:
-            bw = QLabel(f"⚠ {len(bias_warns)} bias flag(s)")
-            bw.setStyleSheet(
-                f"color: #D87020; font-size: {px(10)}px; font-weight: bold;"
+        if flagged and concerns:
+            count_lbl = QLabel(f"({len(concerns)})")
+            count_lbl.setStyleSheet(
+                f"color: {BURN_RED}; font-size: {px(10)}px; font-weight: bold;"
                 f" background: transparent; border: none;"
             )
-            lo.addWidget(bw)
+            lo.addWidget(count_lbl)
 
-        lo.addStretch()
+        if bias_warns:
+            warn = QLabel("⚠")
+            warn.setToolTip(f"{len(bias_warns)} bias flag(s) detected in model output")
+            warn.setStyleSheet(
+                f"color: #D87020; font-size: {px(11)}px; font-weight: bold;"
+                f" background: transparent; border: none;"
+            )
+            lo.addWidget(warn)
 
-    def _fill_track_b(self, lo: QVBoxLayout, data: dict) -> None:
+        # Visible rationale below banner
+        rationale_lbl = info.get(rationale_key)
+        if rationale_lbl is not None:
+            if flagged and concerns:
+                lines = [f"{label_prefix}  ·  flagged"]
+                for c in concerns[:3]:
+                    passage = (c.get("flagged_passage") or "").strip()[:200]
+                    why     = (c.get("why_flagged") or "").strip()[:400]
+                    conf    = c.get("confidence")
+                    is_bias = "⚠" in why
+                    parts = []
+                    if passage:
+                        parts.append(f'"{passage}"')
+                    if why:
+                        parts.append(why)
+                    if conf is not None:
+                        parts.append(f"(conf {float(conf):.2f})")
+                    prefix = "⚠ " if is_bias else "  • "
+                    lines.append(prefix + " — ".join(parts))
+                rationale_lbl.setText("\n".join(lines))
+                rationale_lbl.setVisible(True)
+            else:
+                rationale_lbl.setVisible(False)
+            self._sync_rationale_visibility(info)
+
+    def _fill_track_b(self, lo, data: dict, info: dict) -> None:
+        """Fill Track B — axis pill + check-in pill in banner; signal/reasoning below."""
         axis     = (data.get("axis") or "").strip()
-        signal   = data.get("signal", "")
+        signal   = (data.get("signal") or "").strip()
         conf     = data.get("confidence")
         prescan  = data.get("prescan_signals") or []
         checkin  = data.get("checkin_flag")
-        checkin_r = data.get("checkin_reasoning", "")
+        checkin_r = (data.get("checkin_reasoning") or "").strip()
 
-        lo.addWidget(_axis_pill(axis if axis else "—"))
-        lo.addSpacing(2)
+        axis_pill = _axis_pill(axis if axis else "—")
+        lo.addWidget(axis_pill)
 
-        if signal:
-            lo.addWidget(_mid_label(signal[:220]))
-        if conf is not None:
-            lo.addWidget(_dim_label(f"conf: {float(conf):.2f}", size=9))
+        if checkin:
+            ci_pill = _axis_pill("CHECK-IN")
+            lo.addWidget(ci_pill)
 
-        if prescan:
-            lo.addSpacing(2)
-            ps_hdr = QLabel("prescan:")
-            ps_hdr.setStyleSheet(
-                f"color: {PHOSPHOR_GLOW}; font-size: {px(9)}px; font-weight: bold;"
-                f" background: transparent; border: none;"
-            )
-            lo.addWidget(ps_hdr)
-            for s in prescan[:2]:
-                lo.addWidget(_dim_label(f'"{s[:100]}"', size=9))
+        # Visible rationale below banner
+        rationale_lbl = info.get("track_b_rationale")
+        if rationale_lbl is not None:
+            lines = []
+            if axis:
+                head = f"4-AXIS  ·  {axis}"
+                if conf is not None:
+                    head += f"  (conf {float(conf):.2f})"
+                lines.append(head)
+            if signal:
+                lines.append(f"  • {signal}")
+            if prescan:
+                for s in prescan[:3]:
+                    lines.append(f"  · prescan: \"{s[:200]}\"")
+            if checkin:
+                lines.append("CHECK-IN  ·  flagged")
+                if checkin_r:
+                    lines.append(f"  • {checkin_r}")
+            if lines:
+                rationale_lbl.setText("\n".join(lines))
+                rationale_lbl.setVisible(True)
+            else:
+                rationale_lbl.setVisible(False)
+            self._sync_rationale_visibility(info)
 
-        lo.addSpacing(4)
-        lo.addWidget(make_h_rule())
-        lo.addSpacing(2)
+    def _sync_rationale_visibility(self, info: dict) -> None:
+        """Show the rationale frame iff at least one track's rationale has content.
 
-        if checkin is None:
-            lo.addWidget(_glow_label("CHECK-IN: n/a"))
-        elif checkin:
-            lo.addWidget(_axis_pill("CHECK-IN"))
-            if checkin_r:
-                lo.addWidget(_dim_label(checkin_r[:300]))
-        else:
-            lo.addWidget(_glow_label("CHECK-IN: no flag"))
-
-        lo.addStretch()
+        Uses isHidden() rather than isVisible() — the latter requires the parent
+        window to be shown, which fails in tests and on initial load.
+        """
+        frame = info.get("rationale_frame")
+        if not frame:
+            return
+        any_shown = False
+        for key in ("track_a_rationale", "track_a_wb_rationale", "track_b_rationale"):
+            lbl = info.get(key)
+            if lbl is not None and not lbl.isHidden():
+                any_shown = True
+                break
+        frame.setVisible(any_shown)
 
     def _fill_track_c(self, lo: QVBoxLayout, data: dict) -> None:
+        """Fill Track C body (inside scroll area) — full observation prose."""
         obs = data.get("observation", "")
         if obs:
             lbl = QLabel(obs)
             lbl.setWordWrap(True)
+            lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             lbl.setStyleSheet(
                 f"color: {PHOSPHOR_MID}; font-size: {px(11)}px;"
                 f" background: transparent; border: none;"
             )
+            lbl.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
             lo.addWidget(lbl)
         else:
             lo.addWidget(_glow_label("[no observation]"))
@@ -1254,14 +1765,24 @@ class ResearchPanel(QFrame):
                 bias_warn = any(
                     c.get("has_bias_warning", False) for c in ta.get("concerns", [])
                 )
+                concerns = ta.get("concerns", [])
                 rows.append({
                     "anon_id":             anon_id,
                     "word_count":          sc.get("word_count", ""),
                     "a_flagged":           ta.get("flagged", ""),
                     "a_concern_count":     ta.get("concern_count", ""),
                     "a_max_confidence":    max(
-                        (c.get("confidence") or 0 for c in ta.get("concerns", [])),
+                        (c.get("confidence") or 0 for c in concerns),
                         default="",
+                    ),
+                    "a_flagged_passages":  " || ".join(
+                        (c.get("flagged_passage") or "").strip() for c in concerns
+                    ),
+                    "a_why_flagged":       " || ".join(
+                        (c.get("why_flagged") or "").strip() for c in concerns
+                    ),
+                    "a_confidences":       " || ".join(
+                        f"{float(c.get('confidence') or 0):.2f}" for c in concerns
                     ),
                     "a_bias_warning":      bias_warn,
                     "b_axis":              tb.get("axis", ""),
@@ -1273,6 +1794,147 @@ class ResearchPanel(QFrame):
                 })
             if not rows:
                 return
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+                writer.writeheader()
+                writer.writerows(rows)
+            self._progress_lbl.setText(f"exported: {os.path.basename(path)}")
+        except Exception as exc:
+            self._progress_lbl.setText(f"export error: {exc}")
+
+    def _on_export_csv_named(self) -> None:
+        """Export CSV with real student names + all 3 tracks.
+
+        Track B+C come from the DB (always available once a run is loaded);
+        Track A comes from the in-memory result if Track A has been run.
+        Available even before Track A runs — A columns will just be empty.
+        """
+        if not self._prior_run_id and not self._current_result:
+            return
+        safe_name = (self._assignment_name or "run")[:30]
+        safe_name = safe_name.replace(" ", "_").replace("/", "-")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export CSV (with student names)",
+            f"{safe_name}_named.csv",
+            "CSV files (*.csv)",
+        )
+        if not path:
+            return
+
+        # Track B + C + submission text come from the DB codings
+        coding_by_id: dict = {}
+        if self._store and self._prior_run_id:
+            try:
+                for c in self._store.get_codings(self._prior_run_id) or []:
+                    coding_by_id[c.get("student_id", "")] = c
+            except Exception as exc:
+                log.warning("Could not load codings for export: %s", exc)
+
+        # Track A (combined) and Track A_wb (wellbeing-only) — prefer in-memory
+        # result if Track A was just run, fall back to DB-persisted copies.
+        track_a_by_id: dict = {}
+        track_a_wb_by_id: dict = {}
+        if self._current_result:
+            for sid, sc in (self._current_result.get("comparisons") or {}).items():
+                if sc.get("track_a"):
+                    track_a_by_id[sid] = sc["track_a"]
+                if sc.get("track_a_wb"):
+                    track_a_wb_by_id[sid] = sc["track_a_wb"]
+        # Pull persisted versions for any students not covered by live result
+        for sid, coding in coding_by_id.items():
+            raw = coding.get("coding_record") or {}
+            if isinstance(raw, str):
+                try:
+                    raw = json.loads(raw)
+                except Exception:
+                    raw = {}
+            if sid not in track_a_by_id:
+                persisted = raw.get("track_a_research")
+                if persisted:
+                    track_a_by_id[sid] = persisted
+            if sid not in track_a_wb_by_id:
+                persisted_wb = raw.get("track_a_research_wb")
+                if persisted_wb:
+                    track_a_wb_by_id[sid] = persisted_wb
+
+        # Union of student IDs from all sources
+        all_ids = set(coding_by_id.keys()) | set(track_a_by_id.keys()) | set(track_a_wb_by_id.keys())
+
+        def _summarize_track_a(ta: dict) -> dict:
+            """Return spreadsheet-friendly fields for a binary classifier result."""
+            concerns = ta.get("concerns") or [] if ta else []
+            return {
+                "flagged":          ta.get("flagged", "") if ta else "",
+                "concern_count":    len(concerns),
+                "max_confidence":   max(
+                    (float(c.get("confidence") or 0) for c in concerns),
+                    default="",
+                ),
+                "flagged_passages": " || ".join(
+                    (c.get("flagged_passage") or "").strip() for c in concerns
+                ),
+                "why_flagged":      " || ".join(
+                    (c.get("why_flagged") or "").strip() for c in concerns
+                ),
+                "confidences":      " || ".join(
+                    f"{float(c.get('confidence') or 0):.2f}" for c in concerns
+                ),
+                "bias_warning":     any(
+                    "⚠" in (c.get("why_flagged") or "") for c in concerns
+                ),
+            }
+
+        rows = []
+        for sid in all_ids:
+            coding = coding_by_id.get(sid, {})
+            raw    = coding.get("coding_record") or {}
+            if isinstance(raw, str):
+                try:
+                    raw = json.loads(raw)
+                except Exception:
+                    raw = {}
+
+            a_combined = _summarize_track_a(track_a_by_id.get(sid, {}))
+            a_wb       = _summarize_track_a(track_a_wb_by_id.get(sid, {}))
+
+            name = coding.get("student_name") or ""
+
+            rows.append({
+                "student_name":                  name,
+                "word_count":                    raw.get("word_count", ""),
+                "submission_text":               coding.get("submission_text", "") or "",
+                # Track A — combined scope (wellbeing + power-moves)
+                "track_a_flagged":               a_combined["flagged"],
+                "track_a_concern_count":         a_combined["concern_count"],
+                "track_a_max_confidence":        a_combined["max_confidence"],
+                "track_a_flagged_passages":      a_combined["flagged_passages"],
+                "track_a_why_flagged":           a_combined["why_flagged"],
+                "track_a_confidences":           a_combined["confidences"],
+                "track_a_bias_warning":          a_combined["bias_warning"],
+                # Track A_wb — wellbeing-only scope
+                "track_a_wb_flagged":            a_wb["flagged"],
+                "track_a_wb_concern_count":      a_wb["concern_count"],
+                "track_a_wb_max_confidence":     a_wb["max_confidence"],
+                "track_a_wb_flagged_passages":   a_wb["flagged_passages"],
+                "track_a_wb_why_flagged":        a_wb["why_flagged"],
+                "track_a_wb_confidences":        a_wb["confidences"],
+                "track_a_wb_bias_warning":       a_wb["bias_warning"],
+                # Track B — 4-axis wellbeing + check-in
+                "track_b_axis":                  raw.get("wellbeing_axis", ""),
+                "track_b_signal":                raw.get("wellbeing_signal", ""),
+                "track_b_confidence":            raw.get("wellbeing_confidence", ""),
+                "track_b_prescan_signals":       " | ".join(
+                    str(s) for s in (raw.get("prescan_signals") or [])
+                ),
+                "track_b_checkin_flag":          raw.get("checkin_flag", ""),
+                "track_b_checkin_reasoning":     raw.get("checkin_reasoning", ""),
+                # Track C — generative observation
+                "track_c_observation":           raw.get("observation", ""),
+            })
+
+        rows.sort(key=lambda r: (r["student_name"] or "").lower())
+
+        try:
             with open(path, "w", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
                 writer.writeheader()

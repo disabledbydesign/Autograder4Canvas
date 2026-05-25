@@ -1713,9 +1713,14 @@ class BulkRunWorker(CancellableWorker):
                 qualifying_groups = []
                 for group in groups:
                     assignments = group.get("assignments", [])
+                    gid_chk = group.get("id", 0)
+                    ov_chk = self._group_overrides.get(gid_chk, {})
+                    desired_chk = _template_atype_to_canvas_grading_type(
+                        ov_chk.get("assignment_type", "")
+                    )
                     qualifies = False
                     for a in assignments:
-                        if not _bulk_is_autogradeable(a):
+                        if not _bulk_is_autogradeable(a, desired_chk):
                             continue
                         due_raw = a.get("due_at")
                         due_dt = _bulk_parse_due(due_raw)
@@ -1741,6 +1746,43 @@ class BulkRunWorker(CancellableWorker):
                 self.log_line.emit(
                     f"  {len(qualifying_groups)} group(s) with qualifying assignments"
                 )
+
+                # ── Auto-convert grading types to match template settings ───
+                if self._group_overrides and not self.is_cancelled():
+                    from canvas_editor import CanvasEditor
+                    _editor = CanvasEditor(self._api.base_url, self._api.api_token)
+                    for _grp in qualifying_groups:
+                        _gid = _grp.get("id", 0)
+                        _ov  = self._group_overrides.get(_gid, {})
+                        _target = _template_atype_to_canvas_grading_type(
+                            _ov.get("assignment_type", "")
+                        )
+                        if not _target:
+                            continue
+                        for _a in _grp.get("assignments", []):
+                            _cur = _a.get("grading_type", "")
+                            if _cur == _target:
+                                continue
+                            _aid   = _a.get("id")
+                            _aname = _a.get("name", f"id={_aid}")
+                            if self._dry_run:
+                                self.log_line.emit(
+                                    f"  [preview] grading type: {_aname!r}"
+                                    f"  {_cur} → {_target}"
+                                )
+                                _a["grading_type"] = _target
+                            else:
+                                _res = _editor.set_grading_type(course_id, _aid, _target)
+                                if _res.ok:
+                                    self.log_line.emit(
+                                        f"  ✓ grading type: {_aname!r}"
+                                        f"  {_cur} → {_target}"
+                                    )
+                                    _a["grading_type"] = _target
+                                else:
+                                    self.log_line.emit(
+                                        f"  ✗ grading type: {_aname!r}: {_res.message}"
+                                    )
 
                 # Build config
                 config = AutomationConfig()
@@ -1844,11 +1886,41 @@ def _bulk_parse_due(raw):
         return None
 
 
-def _bulk_is_autogradeable(assignment: dict) -> bool:
-    """Return True if the autograder can handle this assignment type."""
+_WRITABLE_SUBMISSION_TYPES = frozenset({
+    "online_text_entry", "online_upload", "online_url",
+    "media_recording", "student_annotation",
+})
+
+
+def _template_atype_to_canvas_grading_type(assignment_type: str) -> str:
+    """
+    Map a template assignment_type to the Canvas grading_type string it requires.
+    Returns "" if no conversion is needed (e.g. "mixed").
+    """
+    return {
+        "complete_incomplete": "pass_fail",
+        "discussion_ci":       "pass_fail",
+        "discussion_points":   "points",
+        "discussion_letter":   "letter_grade",
+    }.get(assignment_type, "")
+
+
+def _bulk_is_autogradeable(assignment: dict, desired_grading_type: str = "") -> bool:
+    """Return True if the autograder can handle this assignment type.
+
+    desired_grading_type: the Canvas grading_type the template will convert
+    this assignment to (from _template_atype_to_canvas_grading_type).  When
+    provided, written-submission assignments that are NOT yet pass_fail are
+    also considered autogradeable so the conversion step can fix them.
+    """
     grading_type = assignment.get("grading_type", "")
     submission_types = assignment.get("submission_types", [])
-    return grading_type == "pass_fail" or "discussion_topic" in submission_types
+    if grading_type == "pass_fail" or "discussion_topic" in submission_types:
+        return True
+    # Template will convert this assignment — allow it if it has writable submissions
+    if desired_grading_type and grading_type != "not_graded":
+        return bool(set(submission_types) & _WRITABLE_SUBMISSION_TYPES)
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -2514,7 +2586,7 @@ class ResearchComparisonWorker(CancellableWorker):
     def run(self) -> None:
         try:
             from dataclasses import asdict
-            from insights.research_engine import ResearchEngine
+            from research.research_engine import ResearchEngine
 
             engine = ResearchEngine(
                 api=self._api,

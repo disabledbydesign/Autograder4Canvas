@@ -145,6 +145,9 @@ class SubmissionCodingRecord(BaseModel):
     # AIC engagement dimensions — snapshot, not character assessment. Some engagement happens outside of text.
     engagement_signals: Optional[Dict[str, Any]] = None
 
+    # Direct link to Canvas submission (populated by engine — enables one-click review)
+    submission_url: Optional[str] = None
+
     # Count of non-null engagement signal dimensions — used to surface zero-signal students.
     # Computed after engagement_signals is populated (in engine.py).
     engagement_signal_count: int = 0

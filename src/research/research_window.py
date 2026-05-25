@@ -1,10 +1,19 @@
 """
 ResearchWindow — minimal QMainWindow shell for the research comparison tool.
 
-Launched from scripts/launch_research.py. Never imported by the main GUI.
+Launched from scripts/launch_research.py. Never imported by the main GUI
+or any production code path.
 """
 
 from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+# Allow running directly: `python3 src/research/research_window.py`
+_src = str(Path(__file__).resolve().parent.parent)
+if _src not in sys.path:
+    sys.path.insert(0, _src)
 
 from PySide6.QtWidgets import QMainWindow
 
@@ -22,7 +31,7 @@ class ResearchWindow(QMainWindow):
         self.resize(1400, 900)
         self.setStyleSheet(f"QMainWindow {{ background: {BG_VOID}; }}")
 
-        from gui.panels.research_panel import ResearchPanel
+        from research.research_panel import ResearchPanel
         self._panel = ResearchPanel(api=api, store=store)
         self.setCentralWidget(self._panel)
 

@@ -798,14 +798,13 @@ def code_submission_reading_first(
     # verify quotes against actual text. The reading from Pass 1 carries
     # the full content understanding.
     #
-    # Cap the reading injected into Pass 2 at 3000 chars.  When a submission
-    # produces multiple Pass 1 chunks (each ~1200 tokens of prose), the
-    # concatenated reading can exhaust the model's context window and leave
-    # only ~100-200 tokens for the JSON response — causing reproducible
-    # truncation at a fixed character offset (observed: char 658 for one
-    # long submission).  The reading is qualitative prose; the first 3000
-    # chars carry the key observations for extraction.
-    _MAX_READING_FOR_P2 = 3000
+    # Cap the reading injected into Pass 2 at 1500 chars.  The full P2 prompt
+    # also contains up to 3000 chars of submission text — combined with a long
+    # reading the total can still exhaust a lightweight model's context window
+    # even after the original 3000-char cap.  1500 chars (~300 tokens) carries
+    # the key qualitative observations while reliably preserving response budget.
+    # (Observed: char 658 truncation for one long submission with 3000-char cap.)
+    _MAX_READING_FOR_P2 = 1500
     reading_for_p2 = reading
     if len(reading) > _MAX_READING_FOR_P2:
         reading_for_p2 = reading[:_MAX_READING_FOR_P2] + "\n[... reading truncated for context window ...]"
@@ -1012,6 +1011,7 @@ def classify_wellbeing(
     student_name: str,
     submission_text: str,
     *,
+    assignment_prompt: str = "",
     max_tokens: int = 150,
 ) -> dict:
     """Classify a student's submission on the 4-axis wellbeing schema.
@@ -1064,6 +1064,7 @@ def classify_wellbeing(
     prompt = WELLBEING_CLASSIFIER_PROMPT.format(
         student_name=student_name,
         signal_prefix=signal_prefix,
+        assignment_prompt=assignment_prompt,
         submission_text=classifier_input,
     )
 
@@ -1093,6 +1094,7 @@ def classify_checkin(
     student_name: str,
     submission_text: str,
     *,
+    assignment_prompt: str = "",
     max_tokens: int = 200,
 ) -> dict:
     """Pass 2: Targeted CHECK-IN for ENGAGED students only.
@@ -1118,6 +1120,7 @@ def classify_checkin(
 
     prompt = TARGETED_CHECKIN_PROMPT.format(
         student_name=student_name,
+        assignment_prompt=assignment_prompt,
         submission_text=submission_text,
     )
 

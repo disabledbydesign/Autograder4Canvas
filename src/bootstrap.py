@@ -182,6 +182,37 @@ def _pip_install_silent(venv_pip_path, *packages):
     return result.returncode == 0
 
 
+def ensure_spacy_model():
+    """Download en_core_web_sm if spaCy is installed but the model is missing.
+
+    Non-blocking — logs a note on failure but never prevents launch.
+    Named entity recognition and assignment fingerprinting silently skip
+    when this model is absent, so this prevents a quiet feature gap.
+    """
+    venv_py = _venv_python()
+    if not venv_py.exists():
+        return
+    try:
+        result = subprocess.run(
+            [str(venv_py), "-c", "import spacy; spacy.load('en_core_web_sm')"],
+            capture_output=True, timeout=15,
+        )
+        if result.returncode == 0:
+            return  # already installed
+        # spaCy present but model missing — download it
+        print("  Downloading spaCy language model (en_core_web_sm)...")
+        dl = subprocess.run(
+            [str(venv_py), "-m", "spacy", "download", "en_core_web_sm"],
+            capture_output=True, timeout=120,
+        )
+        if dl.returncode == 0:
+            print("  spaCy model ready.")
+        else:
+            print("  Note: spaCy model download failed (NER features will be skipped).")
+    except Exception:
+        pass  # non-blocking
+
+
 def ensure_apple_silicon_extras():
     """Install MLX inference and constrained-generation packages on arm64 Macs.
 
@@ -516,6 +547,7 @@ def main():
 
     ensure_venv()
     ensure_dependencies()
+    ensure_spacy_model()
     ensure_apple_silicon_extras()
     setup_credentials()
     print()

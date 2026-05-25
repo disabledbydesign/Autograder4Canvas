@@ -6,7 +6,8 @@ This is a separate entry point from the main GUI — intentionally isolated
 so the research panel cannot be shown during a demo or production session.
 
 Usage:
-    python3 scripts/launch_research.py
+    python3 scripts/launch_research.py            # online mode (uses Canvas creds if present)
+    python3 scripts/launch_research.py --offline  # offline mode (browse stored runs only)
 """
 
 import os
@@ -41,23 +42,26 @@ def main() -> None:
     from gui.styles import build_app_qss
     app.setStyleSheet(build_app_qss())
 
-    # Load credentials (same logic as app.py)
-    from credentials import get_active_profile, load_credentials
-    data = load_credentials()
-    _, profile = get_active_profile(data) if data else (None, {})
-
-    url   = profile.get("canvas_base_url")   or os.environ.get("CANVAS_BASE_URL", "")
-    token = profile.get("canvas_api_token")  or os.environ.get("CANVAS_API_TOKEN", "")
+    offline = "--offline" in sys.argv
 
     api = None
-    if url and token:
-        from automation.canvas_helpers import CanvasAutomationAPI
-        api = CanvasAutomationAPI(base_url=url, api_token=token)
+    if not offline:
+        # Load credentials (same logic as app.py)
+        from credentials import get_active_profile, load_credentials
+        data = load_credentials()
+        _, profile = get_active_profile(data) if data else (None, {})
+
+        url   = profile.get("canvas_base_url")   or os.environ.get("CANVAS_BASE_URL", "")
+        token = profile.get("canvas_api_token")  or os.environ.get("CANVAS_API_TOKEN", "")
+
+        if url and token:
+            from automation.canvas_helpers import CanvasAutomationAPI
+            api = CanvasAutomationAPI(base_url=url, api_token=token)
 
     from insights.insights_store import InsightsStore
     store = InsightsStore()
 
-    from gui.research_window import ResearchWindow
+    from research.research_window import ResearchWindow
     window = ResearchWindow(api=api, store=store)
     window.show()
     sys.exit(app.exec())

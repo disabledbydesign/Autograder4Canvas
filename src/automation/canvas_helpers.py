@@ -313,7 +313,11 @@ class CanvasAutomationAPI:
             Number of submissions (may be capped at 1 — callers only check > 0)
         """
         url = f"{self.base_url}/api/v1/courses/{course_id}/assignments/{assignment_id}/submissions"
-        params = {'per_page': 1, 'workflow_state': 'submitted'}
+        # Don't filter by workflow_state at the API level — discussion_topic and
+        # online_upload submissions don't always use workflow_state='submitted',
+        # causing them to be skipped. Use submitted_at instead, which is reliably
+        # set for all submission types when a student has turned in work.
+        params = {'per_page': 10}
 
         try:
             response = requests.get(url, headers=self.headers, params=params, timeout=30)
@@ -321,7 +325,7 @@ class CanvasAutomationAPI:
             submissions = response.json()
             return len([
                 s for s in submissions
-                if s.get('workflow_state') not in ['unsubmitted', 'not_submitted']
+                if s.get('submitted_at') is not None
             ])
 
         except requests.exceptions.RequestException as e:

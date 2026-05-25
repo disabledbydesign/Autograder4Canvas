@@ -42,6 +42,9 @@ class AssignmentRule:
     # Whether to grade unsubmitted past-due assignments as Incomplete
     mark_missing_as_incomplete: bool = False
 
+    # Whether to grade unsubmitted past-due assignments as 0 (points mode)
+    mark_missing_as_zero: bool = False
+
     # LLM reply quality check
     use_llm_reply_check: bool = False
 
@@ -85,6 +88,7 @@ class AssignmentRule:
         """Create from dictionary."""
         # Provide defaults for fields added after initial release so old configs load cleanly
         data.setdefault('reply_credit_assignment_ids', None)
+        data.setdefault('mark_missing_as_zero', False)
         return cls(**data)
 
 

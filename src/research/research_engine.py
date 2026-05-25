@@ -205,9 +205,24 @@ class ResearchEngine:
         self._store = store        # InsightsStore (read-only)
         self._settings = settings or {}
         self._cancelled = False
+        # Research-panel runs are long (3-track comparison spans hundreds of
+        # LLM calls). Reuse the same sleep-prevention helper the production
+        # pipeline uses so the Mac doesn't suspend mid-run and deadlock MLX.
+        # The helper is idempotent: if production is also running and already
+        # holds caffeinate, our start() is a no-op.
+        from insights.process_keepalive import SleepPreventer
+        self._sleep_preventer = SleepPreventer(
+            enabled=bool(self._settings.get("insights_keep_awake", True))
+        )
 
     def cancel(self) -> None:
         self._cancelled = True
+        # Make sure caffeinate is released even if the worker thread is
+        # mid-call and we never reach the function-level finally block.
+        try:
+            self._sleep_preventer.stop()
+        except Exception:
+            pass
 
     def is_cancelled(self) -> bool:
         return self._cancelled
@@ -363,7 +378,44 @@ class ResearchEngine:
         progress: Callable[[str], None] = lambda m: None,
         track_cb: Callable[[str, str, dict], None] = lambda *a: None,
     ) -> Optional[ComparisonResult]:
-        """Mode 1: Full isolated test suite.
+        """Mode 1: Full isolated test suite — public entry point.
+
+        Wraps `_run_comparison_inner` in a sleep-prevention guard so the
+        Mac can't suspend mid-run (which would deadlock MLX). Inner method
+        contains all the actual orchestration logic.
+        """
+        # Re-read setting in case it changed since construction.
+        self._sleep_preventer._enabled = bool(
+            self._settings.get("insights_keep_awake", True)
+        )
+        self._sleep_preventer.start()
+        try:
+            return self._run_comparison_inner(
+                course_id=course_id,
+                course_name=course_name,
+                assignment_id=assignment_id,
+                assignment_name=assignment_name,
+                is_discussion=is_discussion,
+                model_tier=model_tier,
+                progress=progress,
+                track_cb=track_cb,
+            )
+        finally:
+            self._sleep_preventer.stop()
+
+    def _run_comparison_inner(
+        self,
+        *,
+        course_id: int,
+        course_name: str,
+        assignment_id: int,
+        assignment_name: str,
+        is_discussion: bool = False,
+        model_tier: str = "auto",
+        progress: Callable[[str], None] = lambda m: None,
+        track_cb: Callable[[str, str, dict], None] = lambda *a: None,
+    ) -> Optional[ComparisonResult]:
+        """Mode 1 implementation: Full isolated test suite.
 
         Executes all shared stages plus all 3 classification tracks from
         scratch, regardless of whether a prior Insights run exists.
@@ -576,7 +628,7 @@ class ResearchEngine:
         t_a_iso = _iso_now()
 
         track_a_results: Dict[str, TrackAResult] = {}
-        from insights.concern_detector import detect_concerns
+        from research.concern_detector import detect_concerns
 
         for sid, body in texts.items():
             if self._cancelled:
@@ -660,7 +712,12 @@ class ResearchEngine:
             progress(f"Track B (wellbeing): {name}...")
 
             try:
-                wb = classify_wellbeing(backend, student_name=name, submission_text=body)
+                wb = classify_wellbeing(
+                    backend,
+                    student_name=name,
+                    submission_text=body,
+                    assignment_prompt=assignment_prompt,
+                )
                 axis = wb.get("axis", "NONE")
                 ci_flag: Optional[bool] = None
                 ci_reasoning = ""
@@ -669,7 +726,10 @@ class ResearchEngine:
                     progress(f"Track B (CHECK-IN): {name}...")
                     try:
                         ci = classify_checkin(
-                            checkin_backend, student_name=name, submission_text=body
+                            checkin_backend,
+                            student_name=name,
+                            submission_text=body,
+                            assignment_prompt=assignment_prompt,
                         )
                         ci_flag = ci.get("check_in", False)
                         ci_reasoning = ci.get("reasoning", "")
@@ -847,14 +907,48 @@ class ResearchEngine:
         self._cancelled = False
         throttle = float(self._settings.get("insights_throttle_delay", 2.0))
 
-        progress("Initializing backend...")
-        from insights.llm_backend import auto_detect_backend
-        backend = auto_detect_backend(model_tier, self._settings)
-        if backend is None:
-            progress("No LLM backend available.")
-            return {}
-        progress(f"Backend: {backend.name} ({backend.model})")
+        # Keep the Mac awake for the duration. Idempotent: if the production
+        # pipeline is also running and already holds caffeinate, this is a
+        # no-op. Re-read setting in case it changed since construction.
+        self._sleep_preventer._enabled = bool(
+            self._settings.get("insights_keep_awake", True)
+        )
+        self._sleep_preventer.start()
+        try:
+            progress("Initializing backend...")
+            from insights.llm_backend import auto_detect_backend
+            backend = auto_detect_backend(model_tier, self._settings)
+            if backend is None:
+                progress("No LLM backend available.")
+                return {}
+            progress(f"Backend: {backend.name} ({backend.model})")
 
+            return self._run_track_a_only_inner(
+                texts=texts,
+                student_names=student_names,
+                assignment_prompt=assignment_prompt,
+                model_tier=model_tier,
+                backend=backend,
+                throttle=throttle,
+                progress=progress,
+                track_cb=track_cb,
+            )
+        finally:
+            self._sleep_preventer.stop()
+
+    def _run_track_a_only_inner(
+        self,
+        *,
+        texts: Dict[str, str],
+        student_names: Dict[str, str],
+        assignment_prompt: str,
+        model_tier: str,
+        backend,
+        throttle: float,
+        progress: Callable[[str], None],
+        track_cb: Callable[[str, str, dict], None],
+    ) -> Dict[str, TrackAResult]:
+        """Inner body of run_track_a_only — see that method's docstring."""
         # Build minimal submission dicts for QuickAnalyzer
         fake_submissions = [
             {
@@ -882,7 +976,7 @@ class ResearchEngine:
             concern_signals_by_sid.setdefault(sid, []).append(cs)
 
         progress("Track A: Binary concern detection...")
-        from insights.concern_detector import detect_concerns
+        from research.concern_detector import detect_concerns
 
         results: Dict[str, TrackAResult] = {}
         tier = model_tier if model_tier != "auto" else "lightweight"
@@ -897,8 +991,11 @@ class ResearchEngine:
             sig_matrix = getattr(sub_summary, "signal_matrix_results", []) if sub_summary else []
             concern_sigs = concern_signals_by_sid.get(sid, [])
 
+            sig_summary = _format_signal_summary(sig_matrix, concern_sigs)
+
+            # Run combined-scope binary (wellbeing + power moves) — Track A
             try:
-                concerns = detect_concerns(
+                combined = detect_concerns(
                     submission_text=body,
                     student_name=name,
                     student_id=sid,
@@ -909,30 +1006,72 @@ class ResearchEngine:
                     backend=backend,
                     profile_fragment="",
                     class_context="",   # NO class context
+                    scope="combined",
                 )
-                concern_dicts = [c.model_dump() for c in concerns]
-                bias_warns = [c for c in concern_dicts
-                              if c.get("why_flagged", "").startswith("⚠")]
-                sig_summary = _format_signal_summary(sig_matrix, concern_sigs)
-
-                result = TrackAResult(
+                combined_dicts = [c.model_dump() for c in combined]
+                combined_bias = [c for c in combined_dicts
+                                 if c.get("why_flagged", "").startswith("⚠")]
+                combined_result = TrackAResult(
                     student_id=sid,
                     student_name=name,
-                    flagged=any(c["confidence"] >= 0.5 for c in concern_dicts),
-                    concerns=concern_dicts,
-                    bias_warnings=bias_warns,
+                    flagged=any(c["confidence"] >= 0.5 for c in combined_dicts),
+                    concerns=combined_dicts,
+                    bias_warnings=combined_bias,
                     signal_matrix_summary=sig_summary,
                 )
             except Exception as exc:
-                log.warning("Track A (only) failed for %s: %s", name, exc)
-                result = TrackAResult(
+                log.warning("Track A combined failed for %s: %s", name, exc)
+                combined_result = TrackAResult(
                     student_id=sid, student_name=name,
                     flagged=False, concerns=[], bias_warnings=[],
                     signal_matrix_summary=f"Error: {exc}",
                 )
 
-            results[sid] = result
-            track_cb("track_a", sid, asdict(result))
+            results[sid] = combined_result
+            track_cb("track_a", sid, asdict(combined_result))
+
+            if self._cancelled:
+                return results
+
+            # Inter-call throttle to keep MLX stable
+            if throttle > 0:
+                time.sleep(throttle)
+
+            # Run wellbeing-only-scope binary — Track A_wb
+            try:
+                wb = detect_concerns(
+                    submission_text=body,
+                    student_name=name,
+                    student_id=sid,
+                    assignment_prompt=assignment_prompt,
+                    signal_matrix_results=sig_matrix,
+                    concern_signals=concern_sigs or None,
+                    tier=tier,
+                    backend=backend,
+                    profile_fragment="",
+                    class_context="",
+                    scope="wellbeing",
+                )
+                wb_dicts = [c.model_dump() for c in wb]
+                wb_bias = [c for c in wb_dicts
+                           if c.get("why_flagged", "").startswith("⚠")]
+                wb_result = TrackAResult(
+                    student_id=sid,
+                    student_name=name,
+                    flagged=any(c["confidence"] >= 0.5 for c in wb_dicts),
+                    concerns=wb_dicts,
+                    bias_warnings=wb_bias,
+                    signal_matrix_summary=sig_summary,
+                )
+            except Exception as exc:
+                log.warning("Track A wellbeing-only failed for %s: %s", name, exc)
+                wb_result = TrackAResult(
+                    student_id=sid, student_name=name,
+                    flagged=False, concerns=[], bias_warnings=[],
+                    signal_matrix_summary=f"Error: {exc}",
+                )
+
+            track_cb("track_a_wb", sid, asdict(wb_result))
 
             if throttle > 0 and len(results) < len(texts):
                 time.sleep(throttle)

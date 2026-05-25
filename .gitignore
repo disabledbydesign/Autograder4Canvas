@@ -105,6 +105,11 @@ src/Trashed/
 # External dev tools
 .reframe*
 
+# Claude Code memory and agent state
+.claude/
+entities.json
+mempalace.yaml
+
 # Testing and debugging
 debug_wrapper.sh
 test_*.sh

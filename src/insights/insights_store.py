@@ -550,6 +550,39 @@ class InsightsStore:
         )
         self._conn.commit()
 
+    def save_track_a_result(
+        self, run_id: str, student_id: str, track_a_data: Dict,
+        *, key: str = "track_a_research",
+    ) -> None:
+        """Persist a research-track result into the coding_record JSON.
+
+        Stored under the given key (default 'track_a_research' for the
+        combined-scope binary classifier; pass key='track_a_research_wb'
+        for the wellbeing-only-scope classifier). Living alongside
+        production-pipeline fields means no schema migration is needed.
+
+        Used by the offline research panel so research-classifier results
+        survive across panel restarts.
+        """
+        row = self._conn.execute(
+            "SELECT coding_record FROM insights_codings "
+            "WHERE run_id = ? AND student_id = ?",
+            (run_id, str(student_id)),
+        ).fetchone()
+        if not row:
+            return
+        try:
+            coding = json.loads(row["coding_record"]) if row["coding_record"] else {}
+        except (json.JSONDecodeError, TypeError):
+            coding = {}
+        coding[key] = track_a_data
+        self._conn.execute(
+            "UPDATE insights_codings SET coding_record = ? "
+            "WHERE run_id = ? AND student_id = ?",
+            (json.dumps(coding), run_id, str(student_id)),
+        )
+        self._conn.commit()
+
     def update_coding_note(
         self, run_id: str, student_id: str, note: str,
     ) -> None:
@@ -561,6 +594,123 @@ class InsightsStore:
             (note, run_id, str(student_id)),
         )
         self._conn.commit()
+
+    # ── Skip-retry helpers ─────────────────────────────────────────────────
+
+    # Tag prefix that marks audio/video skips — the only category where
+    # retrying after whisper is installed can produce real insights.
+    _RETRYABLE_SKIP_TAG = "audio/video submission"
+
+    def delete_codings(self, run_id: str, student_ids: list) -> None:
+        """Delete specific coding records so the resume path will re-code them."""
+        if not student_ids:
+            return
+        placeholders = ",".join("?" * len(student_ids))
+        self._conn.execute(
+            f"DELETE FROM insights_codings WHERE run_id = ? AND student_id IN ({placeholders})",
+            [run_id, *[str(s) for s in student_ids]],
+        )
+        self._conn.commit()
+
+    def unmark_coding_complete(self, run_id: str) -> None:
+        """Remove 'coding' from stages_completed and reopen the run so resume_run works."""
+        row = self._conn.execute(
+            "SELECT stages_completed FROM insights_runs WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        if not row:
+            return
+        try:
+            stages = json.loads(row["stages_completed"] or "[]")
+        except (json.JSONDecodeError, TypeError):
+            stages = []
+        stages = [s for s in stages if s != "coding"]
+        self._conn.execute(
+            "UPDATE insights_runs SET stages_completed = ?, completed_at = NULL WHERE run_id = ?",
+            (json.dumps(stages), run_id),
+        )
+        self._conn.commit()
+
+    def get_runs_with_retryable_skips(self) -> List[Dict]:
+        """Return completed runs that have audio/video skip records worth retrying.
+
+        Each entry includes run metadata plus retryable_sids (list of student_ids).
+        Only completed runs are considered — incomplete runs should be resumed normally.
+        """
+        completed = self.get_completed_runs()
+        results = []
+        for run in completed:
+            run_id = run["run_id"]
+            codings = self.get_codings(run_id)
+            retryable = []
+            for row in codings:
+                rec = row.get("coding_record", {})
+                if isinstance(rec, str):
+                    try:
+                        rec = json.loads(rec)
+                    except (json.JSONDecodeError, TypeError):
+                        rec = {}
+                tags = rec.get("theme_tags", [])
+                if any(t.startswith(self._RETRYABLE_SKIP_TAG) for t in tags):
+                    retryable.append(row.get("student_id", ""))
+            if retryable:
+                results.append({**run, "retryable_sids": retryable})
+        return results
+
+    def get_most_recent_substantial_submission(
+        self, student_id: str, course_id: str, exclude_run_id: str = ""
+    ) -> Optional[Dict]:
+        """Return the most recent non-skip submission text + metadata for a student.
+
+        Used to surface prior engagement context on skip-record cards in the GUI.
+        Returns None when no suitable prior submission exists.
+        """
+        _SKIP_TAGS = {
+            "blank submission", "insufficient text for analysis",
+            "audio/video submission", "image submission",
+            "unsupported format", "non-analyzable text",
+        }
+        try:
+            rows = self._conn.execute(
+                """
+                SELECT c.coding_record, c.submission_text,
+                       r.assignment_name, r.started_at
+                FROM insights_codings c
+                JOIN insights_runs r ON c.run_id = r.run_id
+                WHERE c.student_id = ?
+                  AND r.course_id = ?
+                  AND r.completed_at IS NOT NULL
+                  AND c.run_id != ?
+                ORDER BY r.started_at DESC
+                """,
+                (str(student_id), str(course_id), str(exclude_run_id)),
+            ).fetchall()
+        except Exception as e:
+            log.warning("get_most_recent_substantial_submission failed: %s", e)
+            return None
+
+        for r in rows:
+            try:
+                coding = json.loads(r[0]) if r[0] else {}
+            except Exception:
+                coding = {}
+
+            tags = set(coding.get("theme_tags", []))
+            if tags & _SKIP_TAGS:
+                continue
+
+            wc = coding.get("word_count", 0) or 0
+            sub_text = r[1] or ""
+            if wc < 20 and not sub_text.strip():
+                continue
+
+            return {
+                "assignment_name": r[2] or "",
+                "submission_text": sub_text,
+                "word_count": wc,
+                "emotional_register": coding.get("emotional_register", ""),
+            }
+
+        return None
 
     # ── Themes ─────────────────────────────────────────────────────────────
 

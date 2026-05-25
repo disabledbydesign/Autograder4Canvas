@@ -843,6 +843,13 @@ def _clean_llm_json(text: str) -> str:
     #    Valid unicode escape: u followed by 4 hex digits (lookahead keeps 'u')
     text = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', text)
 
+    # 3. Fix \uXXXX where the 4 chars after 'u' are not all hex digits.
+    #    The pass above preserves \u because 'u' is in the allowed set, but
+    #    json.loads still raises "Invalid \uXXXX escape" when the hex digits
+    #    are invalid (e.g. \uFOO, \u003, \uXYZW).  Double the backslash so
+    #    it parses as a literal backslash + 'u' instead.
+    text = re.sub(r'\\u(?![0-9a-fA-F]{4})', r'\\\\u', text)
+
     return text
 
 

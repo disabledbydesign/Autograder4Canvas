@@ -352,6 +352,10 @@ class AutomationEngine:
             self.logger.info(f"      ⏭️  All submissions already graded")
             return 0, skipped_count
 
+        # Determine grading mode
+        use_points = (rule.grading_type == "points")
+        max_points = assignment.get('points_possible', 0) if use_points else None
+
         # Evaluate submissions
         grade_data = {}
         all_submissions_list = list(submissions.values())
@@ -362,10 +366,16 @@ class AutomationEngine:
             )
 
             if is_complete:
-                grade_data[user_id] = {"posted_grade": "complete"}
+                if use_points:
+                    grade_data[user_id] = {"score": max_points}
+                else:
+                    grade_data[user_id] = {"posted_grade": "complete"}
             else:
                 # Never assign 0/incomplete — grant credit and flag for manual review
-                grade_data[user_id] = {"posted_grade": "complete"}
+                if use_points:
+                    grade_data[user_id] = {"score": max_points}
+                else:
+                    grade_data[user_id] = {"posted_grade": "complete"}
                 # Collect notification event so instructor can review manually
                 if self.notifier:
                     body = submission.get("body", "")
@@ -389,15 +399,36 @@ class AutomationEngine:
             if absent_ids:
                 self.logger.info(f"      ℹ️  {len(absent_ids)} absent student(s) marked Incomplete")
 
+        # If mark_missing_as_zero is set (points mode), grade absent students as 0
+        # Only for past-due assignments — never push 0 for future work
+        if rule.mark_missing_as_zero and use_points:
+            if not self.api.is_future_assignment(assignment):
+                for user_id in absent_ids:
+                    grade_data[user_id] = {"score": 0}
+                if absent_ids:
+                    self.logger.info(f"      ℹ️  {len(absent_ids)} absent student(s) marked 0 pts (past due)")
+            else:
+                self.logger.info(f"      ⏭️  Skipping mark_missing_as_zero — assignment is not yet past due")
+
         # Submit grades to Canvas (unless dry-run)
         if not self.dry_run and grade_data:
             self._submit_grades(course_id, assignment_id, grade_data)
-            complete_count = sum(1 for g in grade_data.values() if g.get("posted_grade") == "complete")
-            flagged_count = len(grade_data) - complete_count  # always 0 now; kept for clarity
-            self.logger.info(f"      ✅ Graded {len(grade_data)}: {complete_count} complete, {flagged_count} flagged for review (granted credit)")
+            if use_points:
+                full_count = sum(1 for g in grade_data.values() if g.get("score", 0) > 0)
+                zero_count = sum(1 for g in grade_data.values() if g.get("score", 0) == 0)
+                self.logger.info(f"      ✅ Graded {len(grade_data)}: {full_count} full credit, {zero_count} marked 0")
+            else:
+                complete_count = sum(1 for g in grade_data.values() if g.get("posted_grade") == "complete")
+                flagged_count = len(grade_data) - complete_count
+                self.logger.info(f"      ✅ Graded {len(grade_data)}: {complete_count} complete, {flagged_count} flagged for review (granted credit)")
         elif self.dry_run:
-            complete_count = sum(1 for g in grade_data.values() if g.get("posted_grade") == "complete")
-            self.logger.info(f"      🔍 Would grade {len(grade_data)} ({complete_count} complete, {len(grade_data) - complete_count} flagged for review)")
+            if use_points:
+                full_count = sum(1 for g in grade_data.values() if g.get("score", 0) > 0)
+                zero_count = sum(1 for g in grade_data.values() if g.get("score", 0) == 0)
+                self.logger.info(f"      🔍 Would grade {len(grade_data)} ({full_count} full credit, {zero_count} zero)")
+            else:
+                complete_count = sum(1 for g in grade_data.values() if g.get("posted_grade") == "complete")
+                self.logger.info(f"      🔍 Would grade {len(grade_data)} ({complete_count} complete, {len(grade_data) - complete_count} flagged for review)")
         else:
             self.logger.info(f"      ℹ️  No submissions to evaluate")
 

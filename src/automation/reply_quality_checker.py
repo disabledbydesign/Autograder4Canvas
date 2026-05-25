@@ -1,16 +1,19 @@
 """
-Discussion Reply Quality Checker using local Ollama LLM.
+Discussion Reply Quality Checker.
 
 Evaluates whether a student's discussion forum reply substantively
 engages with the original post, or is just generic agreement/padding.
+
+Backend priority (Apple Silicon): MLX → Ollama → word-count-only fallback.
 """
 
 import re
-import subprocess
-import time
 import logging
-import requests
+import sys
+from pathlib import Path
 
+# Allow importing llm_backend from the insights package
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 SYSTEM_PROMPT = """You evaluate whether a student's discussion forum reply shows ANY intellectual engagement at all.
 
@@ -32,83 +35,40 @@ When in doubt, mark SUBSTANTIVE. A reply that tries to engage intellectually —
 Respond with only: SUBSTANTIVE or NOT SUBSTANTIVE"""
 
 
-class OllamaReplyChecker:
-    """Checks discussion reply quality using a local Ollama model."""
+class ReplyQualityChecker:
+    """
+    Checks discussion reply quality using the best available local LLM.
 
-    def __init__(self, model: str = "llama3.1:8b",
-                 base_url: str = "http://localhost:11434"):
-        self.model = model
-        self.base_url = base_url.rstrip("/")
+    On Apple Silicon: prefers MLX (no server needed, no cold-start timeouts).
+    Elsewhere: uses Ollama.
+    Falls back to word-count-only (always PASS) if no LLM is available.
+    """
+
+    def __init__(self):
         self.logger = logging.getLogger("autograder_automation")
-        self._available = None  # lazy check
+        self._backend = None
+        self._backend_checked = False
 
-    def _try_launch_ollama(self) -> bool:
-        """Attempt to start the Ollama server in the background. Returns True if it comes up."""
+    def _get_backend(self):
+        if self._backend_checked:
+            return self._backend
+        self._backend_checked = True
         try:
-            self.logger.info("      🚀 Ollama not running — attempting to start it...")
-            subprocess.Popen(
-                ["ollama", "serve"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            # Wait up to 10s for it to become reachable
-            for _ in range(10):
-                time.sleep(1)
-                try:
-                    r = requests.get(f"{self.base_url}/api/tags", timeout=2)
-                    if r.status_code == 200:
-                        self.logger.info("      ✅ Ollama started successfully")
-                        return True
-                except Exception:
-                    pass
-            self.logger.warning("      ⚠️  Ollama didn't come up in time — falling back to word-count-only")
-            return False
-        except FileNotFoundError:
-            self.logger.warning("      ⚠️  ollama command not found — falling back to word-count-only")
-            return False
+            from insights.llm_backend import auto_detect_backend
+            backend = auto_detect_backend(tier="lightweight")
+            if backend:
+                self.logger.info(f"      🤖 Reply checker using backend: {backend.name} ({backend.model})")
+                self._backend = backend
+            else:
+                self.logger.warning("      ⚠️  No LLM backend available — using word-count-only fallback")
         except Exception as e:
-            self.logger.warning(f"      ⚠️  Failed to launch Ollama ({e}) — falling back to word-count-only")
-            return False
-
-    def _is_available(self) -> bool:
-        """Check if Ollama is running and the model is available. Auto-launches if not running."""
-        if self._available is not None:
-            return self._available
-        try:
-            r = requests.get(f"{self.base_url}/api/tags", timeout=5)
-        except Exception:
-            # Not reachable — try to launch it
-            if not self._try_launch_ollama():
-                self._available = False
-                return False
-            try:
-                r = requests.get(f"{self.base_url}/api/tags", timeout=5)
-            except Exception:
-                self._available = False
-                return False
-
-        if r.status_code == 200:
-            models = [m["name"] for m in r.json().get("models", [])]
-            # Match model name with or without tag suffix
-            self._available = any(
-                m == self.model or m.startswith(self.model.split(":")[0])
-                for m in models
-            )
-            if not self._available:
-                self.logger.warning(
-                    f"      ⚠️  Ollama running but model '{self.model}' "
-                    f"not found. Available: {models}"
-                )
-        else:
-            self._available = False
-        return self._available
+            self.logger.warning(f"      ⚠️  Could not load LLM backend ({e}) — using word-count-only fallback")
+        return self._backend
 
     def _clean_html(self, text: str) -> str:
-        """Strip HTML tags from Canvas message content."""
         return re.sub(r'<[^>]+>', ' ', text or "").strip()
 
     def _truncate(self, text: str, max_words: int = 300) -> str:
-        """Truncate text to max_words to keep prompts small."""
         words = text.split()
         if len(words) <= max_words:
             return text
@@ -116,58 +76,44 @@ class OllamaReplyChecker:
 
     def is_substantive(self, original_post: str, reply: str) -> bool:
         """
-        Evaluate whether a reply substantively engages with the original post.
-
-        Args:
-            original_post: The parent post text (may contain HTML)
-            reply: The student's reply text (may contain HTML)
-
-        Returns:
-            True if substantive (or on any error — lean toward granting credit)
+        Returns True if the reply substantively engages with the original post.
+        Defaults to True on any error (lean toward granting credit).
         """
-        if not self._is_available():
-            return True  # fallback: grant credit
+        backend = self._get_backend()
+        if backend is None:
+            return True  # no LLM — grant credit
 
         clean_post = self._truncate(self._clean_html(original_post))
         clean_reply = self._truncate(self._clean_html(reply))
-
         user_prompt = f"ORIGINAL POST:\n{clean_post}\n\nSTUDENT REPLY:\n{clean_reply}"
 
         try:
-            r = requests.post(
-                f"{self.base_url}/api/chat",
-                json={
-                    "model": self.model,
-                    "messages": [
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    "stream": False,
-                    "options": {
-                        "temperature": 0.0,
-                        "num_predict": 10,  # only need a few tokens
-                    },
-                },
-                timeout=180,
-            )
-            r.raise_for_status()
+            from insights.llm_backend import send_text
+            response = send_text(
+                backend,
+                prompt=user_prompt,
+                system_prompt=SYSTEM_PROMPT,
+                max_tokens=10,
+            ).strip().upper()
 
-            response_text = r.json().get("message", {}).get("content", "").strip().upper()
-
-            if "NOT SUBSTANTIVE" in response_text:
+            if "NOT SUBSTANTIVE" in response:
                 return False
-            elif "SUBSTANTIVE" in response_text:
+            elif "SUBSTANTIVE" in response:
                 return True
             else:
-                # Couldn't parse — lean toward granting credit
-                self.logger.warning(
-                    f"        ⚠️  LLM returned unparseable response: "
-                    f"'{response_text[:50]}' — defaulting to substantive"
-                )
+                self.logger.warning(f"        ⚠️  Unparseable LLM response: '{response[:50]}' — defaulting to substantive")
                 return True
 
         except Exception as e:
-            self.logger.warning(
-                f"        ⚠️  LLM check failed ({e}) — defaulting to substantive"
-            )
+            self.logger.warning(f"        ⚠️  LLM check failed ({e}) — defaulting to substantive")
             return True
+
+
+# ---------------------------------------------------------------------------
+# Backwards-compatibility shim — existing code instantiates OllamaReplyChecker
+# ---------------------------------------------------------------------------
+class OllamaReplyChecker(ReplyQualityChecker):
+    """Legacy name kept for compatibility. Now delegates to ReplyQualityChecker."""
+    def __init__(self, model: str = "llama3.1:8b", base_url: str = "http://localhost:11434"):
+        super().__init__()
+        # model/base_url ignored — backend is auto-detected

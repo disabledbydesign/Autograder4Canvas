@@ -1,13 +1,27 @@
 """
-Dedicated concern detection for the Insights Engine.
+Binary concern detector — research apparatus only.
 
-ALWAYS a separate LLM call regardless of tier.
-At Lightweight: mainly confirms/rejects non-LLM signal matrix flags.
-At Medium: can classify concern types with moderate confidence.
-At Deep: full cultural analysis capability.
+Runs a single LLM call per submission and returns a list of ConcernRecord
+objects (or empty list). Two scopes are supported via the `scope` parameter:
 
-Anti-bias post-processing: checks LLM output for bias markers
-("aggressive", "emotional", "too angry") — if found, adds warning.
+  - "combined" (default): wellbeing concerns + power-moves language
+    (essentializing, colorblind ideology, savior narrative, etc.)
+  - "wellbeing": wellbeing only — scope-matched to Track B's 4-axis
+    classifier so the binary-vs-4-axis comparison isolates format from scope
+
+Both scopes share the same equity-hardening machinery: course-content vs.
+student-wellbeing distinction, the long Do-NOT-flag list, anti-tone-policing
+post-processing regex, course-content-flag detection regex, and a 0.7
+confidence threshold.
+
+Anti-bias post-processing checks LLM output for bias markers
+("aggressive", "emotional", "too angry") — if found alongside structural
+critique, the rationale is rewritten with a "⚠ POSSIBLE MODEL BIAS" prefix
+and confidence is lowered. Course-content flagging language ("triggering",
+"discusses violence") triggers a similar "⚠ LIKELY COURSE CONTENT" rewrite.
+
+This module is research-only and does not affect the production pipeline,
+which uses the 4-axis wellbeing classifier (Track B) instead.
 """
 
 import logging
@@ -17,12 +31,13 @@ from typing import Dict, List, Optional
 from insights.llm_backend import BackendConfig, parse_json_response, send_text
 from insights.models import ConcernRecord, ConcernSignal
 from insights.patterns import CRITICAL_KEYWORDS, has_critical_keywords
-from insights.prompts import (
+from insights.prompts import JSON_REPAIR_PROMPT, SYSTEM_PROMPT
+from research.prompts import (
     CONCERN_CRITIC_PROMPT,
     CONCERN_IMMANENT_CRITIQUE_ADDENDUM,
     CONCERN_PROMPT,
-    JSON_REPAIR_PROMPT,
-    SYSTEM_PROMPT,
+    WELLBEING_CONCERN_PROMPT_NO_TIEBREAKER,
+    WELLBEING_CONCERN_PROMPT,
 )
 
 log = logging.getLogger(__name__)
@@ -79,6 +94,18 @@ _CONTENT_FLAG_MARKERS = re.compile(
     r"sensitive (content|material|topic)|mature content|"
     r"content warning|distressing (content|material)|"
     r"indication of distress)\b",
+    re.IGNORECASE,
+)
+
+# Phrases that indicate the model returned an entry in concerns[] that is
+# actually a non-concern annotation. Some smaller models (observed: Gemma 3
+# 12B) misuse the JSON schema by putting positive reflections into
+# concerns[] with why_flagged="No concerns" and confidence 1.0. Drop these
+# at parse time; they are model-schema-misuse, not concerns the
+# equity machinery should be analyzing.
+_NON_CONCERN_DENIALS = re.compile(
+    r"\b(no concerns?|not a concern|no concern (is |was )?(found|present|raised)|"
+    r"not (a )?wellbeing concern|no wellbeing concern)\b",
     re.IGNORECASE,
 )
 
@@ -150,12 +177,26 @@ def detect_concerns(
     backend: Optional[BackendConfig],
     profile_fragment: str = "",
     class_context: str = "",
+    scope: str = "combined",
 ) -> List[ConcernRecord]:
     """Run dedicated concern detection on one submission.
+
+    Parameters
+    ----------
+    scope : "combined" | "wellbeing"
+        Which prompt to use. "combined" (default) flags both wellbeing
+        concerns and power-moves language (essentializing, colorblind, etc.) —
+        the historical scope. "wellbeing" flags wellbeing only, scope-matched
+        to Track B's 4-axis classifier.
 
     If no LLM backend is available, returns signal matrix results as
     low-confidence concern flags (non-LLM fallback).
     """
+    if scope not in ("combined", "wellbeing", "wellbeing_no_tiebreaker"):
+        raise ValueError(
+            f"Unknown scope: {scope!r}; expected 'combined', 'wellbeing', "
+            f"or 'wellbeing_no_tiebreaker'"
+        )
     # Format signal matrix context — only pass actual concern signals,
     # not APPROPRIATE signals which confuse smaller models into flagging strengths
     if concern_signals:
@@ -185,7 +226,13 @@ def detect_concerns(
         if class_context
         else ""
     )
-    prompt = CONCERN_PROMPT.format(
+    if scope == "combined":
+        prompt_template = CONCERN_PROMPT
+    elif scope == "wellbeing":
+        prompt_template = WELLBEING_CONCERN_PROMPT
+    else:
+        prompt_template = WELLBEING_CONCERN_PROMPT_NO_TIEBREAKER
+    prompt = prompt_template.format(
         student_name=student_name,
         assignment_prompt=assignment_prompt,
         class_context=class_context_block,
@@ -216,10 +263,17 @@ def detect_concerns(
         passage = item.get("flagged_passage", "")
         if not passage:
             continue
+        why = item.get("why_flagged", "")
+        # Schema-misuse guard: some models put positive reflections into
+        # concerns[] with why_flagged="No concerns" at confidence 1.0.
+        # These are not concerns; drop before building the record.
+        if _NON_CONCERN_DENIALS.search(why):
+            log.debug("Dropping non-concern denial entry: %r", why[:100])
+            continue
         concerns.append(ConcernRecord(
             flagged_passage=passage,
             surrounding_context=item.get("surrounding_context", ""),
-            why_flagged=item.get("why_flagged", ""),
+            why_flagged=why,
             confidence=float(item.get("confidence", 0.5)),
         ))
 

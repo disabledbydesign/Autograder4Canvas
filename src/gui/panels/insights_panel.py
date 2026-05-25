@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
     QTextBrowser, QTextEdit, QVBoxLayout, QWidget,
 )
 from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QRadialGradient
+from PySide6.QtGui import QColor, QDesktopServices, QPainter, QPainterPath, QRadialGradient
 
 from gui.widgets.status_pip import draw_pip
 
@@ -2170,6 +2170,13 @@ class InsightsPanel(QWidget):
                 key=_sort_key,
                 reverse=(sort_mode == "Sort: Name Z–A"),
             )
+            # CRISIS and BURNOUT always float to the top regardless of sort mode.
+            # Python's sort is stable, so relative order within each tier is
+            # preserved from the user-selected sort above.
+            visible.sort(key=lambda item: (
+                0 if item[1].get("wellbeing_axis") == "CRISIS" else
+                1 if item[1].get("wellbeing_axis") == "BURNOUT" else 2
+            ))
 
             # Name search filter
             search_text = search_input.text().strip().lower()
@@ -2242,6 +2249,97 @@ class InsightsPanel(QWidget):
             obs_frame = self._build_observation_frame(record)
             pane_lo.addWidget(obs_frame)
             pane_lo.addWidget(make_h_rule())
+
+        # ── Skip record: prior submission text + current submitted text ──
+        # For blank/short submissions with no analysis, surface the student's
+        # prior engagement so the teacher sees the full context on this card.
+        _SKIP_TAG_SET = {
+            "blank submission", "insufficient text for analysis",
+            "audio/video submission", "image submission",
+            "unsupported format", "non-analyzable text",
+        }
+        is_skip = bool(_SKIP_TAG_SET & set(tags))
+        if is_skip and self._store:
+            _run_meta = self._store.get_run(run_id)
+            _course_id = str(_run_meta.get("course_id", "")) if _run_meta else ""
+            if _course_id:
+                _prior = self._store.get_most_recent_substantial_submission(
+                    sid, _course_id, exclude_run_id=run_id
+                )
+                if _prior:
+                    prior_frame = QFrame()
+                    prior_frame.setStyleSheet(
+                        f"QFrame {{ background: rgba(184,140,0,0.07);"
+                        f" border-left: 3px solid {BORDER_AMBER};"
+                        f" border-radius: 4px; }}"
+                    )
+                    pf_lo = QVBoxLayout(prior_frame)
+                    pf_lo.setContentsMargins(SPACING_SM, SPACING_SM, SPACING_SM, SPACING_SM)
+                    pf_lo.setSpacing(4)
+
+                    _pa_name = _prior.get("assignment_name", "prior assignment")
+                    _pa_wc = _prior.get("word_count", 0)
+                    _pa_reg = _prior.get("emotional_register", "")
+                    _pa_text = _prior.get("submission_text", "")
+
+                    _hdr_parts = [_pa_name, f"{_pa_wc} words"]
+                    if _pa_reg:
+                        _hdr_parts.append(_pa_reg)
+                    prior_hdr = QLabel(
+                        "\u23ce Prior submission \u2014 " + "  \u00b7  ".join(_hdr_parts)
+                    )
+                    prior_hdr.setStyleSheet(
+                        f"color: {PHOSPHOR_DIM}; font-size: {px(10)}px; font-weight: bold;"
+                        f" font-family: {MONO_FONT}; background: transparent; border: none;"
+                    )
+                    pf_lo.addWidget(prior_hdr)
+
+                    if _pa_text.strip():
+                        prior_te = QTextBrowser()
+                        _display_text = _pa_text[:900]
+                        if len(_pa_text) > 900:
+                            _display_text += "…"
+                        prior_te.setPlainText(_display_text)
+                        prior_te.setMaximumHeight(130)
+                        prior_te.setStyleSheet(
+                            f"QTextBrowser {{ background: {BG_INSET};"
+                            f" border: 1px solid {BORDER_DARK}; border-radius: 4px;"
+                            f" color: {PHOSPHOR_MID}; font-size: {px(11)}px;"
+                            f" font-family: {MONO_FONT}; padding: 4px; }}"
+                        )
+                        pf_lo.addWidget(prior_te)
+
+                    pane_lo.addWidget(prior_frame)
+                    pane_lo.addWidget(make_h_rule())
+
+            # Show what was actually submitted for this assignment (if any text)
+            _sub_text = row.get("submission_text", "") or ""
+            if _sub_text.strip() and wc > 0:
+                curr_frame = QFrame()
+                curr_frame.setStyleSheet(
+                    f"QFrame {{ background: {BG_INSET};"
+                    f" border-left: 2px solid {BORDER_DARK}; border-radius: 4px; }}"
+                )
+                cf_lo = QVBoxLayout(curr_frame)
+                cf_lo.setContentsMargins(SPACING_SM, SPACING_XS, SPACING_SM, SPACING_XS)
+                cf_lo.setSpacing(2)
+                curr_lbl = QLabel("Submitted text:")
+                curr_lbl.setStyleSheet(
+                    f"color: {PHOSPHOR_DIM}; font-size: {px(10)}px;"
+                    f" font-family: {MONO_FONT}; background: transparent; border: none;"
+                )
+                cf_lo.addWidget(curr_lbl)
+                curr_te = QTextBrowser()
+                curr_te.setPlainText(_sub_text[:300])
+                curr_te.setMaximumHeight(40)
+                curr_te.setStyleSheet(
+                    f"QTextBrowser {{ background: transparent; border: none;"
+                    f" color: {PHOSPHOR_MID}; font-size: {px(11)}px;"
+                    f" font-family: {MONO_FONT}; padding: 0; }}"
+                )
+                cf_lo.addWidget(curr_te)
+                pane_lo.addWidget(curr_frame)
+                pane_lo.addWidget(make_h_rule())
 
         # ── Wellbeing classification (4-axis: Issue 16) ──
         wb_axis = record.get("wellbeing_axis", "")
@@ -3876,6 +3974,25 @@ class InsightsPanel(QWidget):
                 )
                 c_lo.addWidget(c_desc)
             lo.addWidget(c_frame)
+
+        # "View submission in Canvas" link — always shown when available,
+        # critical for skip records where teacher needs to see the raw submission.
+        sub_url = coding.get("submission_url")
+        if sub_url:
+            canvas_link = QLabel(
+                f'<a href="{sub_url}" style="color: {PHOSPHOR_DIM}; font-style: italic;">'
+                f'View submission in Canvas \u2197</a>'
+            )
+            canvas_link.setCursor(Qt.CursorShape.PointingHandCursor)
+            canvas_link.setStyleSheet(
+                f"color: {PHOSPHOR_DIM}; font-size: {px(11)}px;"
+                f" background: transparent; border: none; padding-top: 4px;"
+            )
+            canvas_link.setOpenExternalLinks(False)
+            canvas_link.linkActivated.connect(
+                lambda url: QDesktopServices.openUrl(QUrl(url))
+            )
+            lo.addWidget(canvas_link)
 
         # "View semester trajectory" cross-link (Issue 17)
         semester_link = QLabel(

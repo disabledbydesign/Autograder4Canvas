@@ -535,15 +535,16 @@ def _meta_synthesize(
 
         if "_parse_error" in parsed:
             # Retry once with stripped-down input (names + frequencies only,
-            # no quotes) to reduce token pressure that causes truncated JSON.
+            # no quotes, no student_ids) to reduce token pressure that causes
+            # truncated JSON.  student_ids can be long arrays with 20+ students;
+            # dropping them cuts the input by ~30% on large classes.
             log.warning("Meta-synthesis parse failed — retrying with compact input")
             compact_sets = []
             for i, ts in enumerate(theme_sets):
                 compact_sets.append({
                     "group": i + 1,
                     "themes": [
-                        {"name": t.name, "frequency": t.frequency,
-                         "student_ids": t.student_ids}
+                        {"name": t.name, "frequency": t.frequency}
                         for t in ts.themes
                     ],
                 })

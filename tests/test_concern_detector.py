@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import pytest
 
-from insights.concern_detector import (
+from research.concern_detector import (
     _check_bias_in_output,
     _format_signal_matrix_for_prompt,
     _format_signal_matrix_tuples,

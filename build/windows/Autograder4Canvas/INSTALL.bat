@@ -7,6 +7,21 @@ echo ========================================
 echo.
 
 :: -------------------------------------------------------
+:: Resolve source directory
+:: If run from inside the git repo (build\windows\Autograder4Canvas\),
+:: the real src\ lives two levels up. If run from a distributed zip,
+:: src\ is right next to this file.
+:: -------------------------------------------------------
+set "SCRIPT_DIR=%~dp0"
+if exist "%SCRIPT_DIR%..\..\src\gui_main.py" (
+    set "SRC_DIR=%SCRIPT_DIR%..\..\src"
+    set "ICON_SRC=%SCRIPT_DIR%..\Autograder4Canvas\icon.ico"
+) else (
+    set "SRC_DIR=%SCRIPT_DIR%src"
+    set "ICON_SRC=%SCRIPT_DIR%icon.ico"
+)
+
+:: -------------------------------------------------------
 :: Check for Python 3
 :: -------------------------------------------------------
 set "PYTHON_CMD="
@@ -40,8 +55,7 @@ if not defined PYTHON_CMD (
         echo  ^(This usually takes 1-2 minutes^)
         echo.
 
-        :: Write the Python installer script next to INSTALL.bat
-        set "PY_PS1=%~dp0install_python.ps1"
+        set "PY_PS1=%TEMP%\install_python.ps1"
         >  "!PY_PS1!" echo $arch = if ([Environment]::Is64BitOperatingSystem) { 'amd64' } else { '' }
         >> "!PY_PS1!" echo $ver  = '3.12.8'
         >> "!PY_PS1!" echo $file = "python-$ver" + $(if ($arch) { "-$arch" } else { "" }) + ".exe"
@@ -67,12 +81,9 @@ if not defined PYTHON_CMD (
         if !PY_RESULT! == 0 (
             echo.
             echo  Done! Adding Python to this session...
-            :: Add the user Python install location to PATH for the current session
-            :: so we don't need to restart the installer
             for /d %%d in ("%LOCALAPPDATA%\Programs\Python\Python3*") do (
                 set "PATH=%%d;%%d\Scripts;!PATH!"
             )
-            :: Re-detect Python
             where python >nul 2>&1
             if !ERRORLEVEL! == 0 (
                 for /f "tokens=2 delims= " %%v in ('python --version 2^>^&1') do set "PY_VER=%%v"
@@ -86,7 +97,6 @@ if not defined PYTHON_CMD (
     )
 )
 
-:: If Python still not found after auto-install attempt, show manual guide
 if not defined PYTHON_CMD (
     echo.
     echo  ================================================
@@ -117,8 +127,13 @@ if not defined PYTHON_CMD (
 echo  Python ready: !PYTHON_CMD! ^(!PY_VER!^)
 echo.
 
-:: Set install location
+:: -------------------------------------------------------
+:: Confirm install location
+:: -------------------------------------------------------
 set "INSTALL_DIR=%LOCALAPPDATA%\Autograder4Canvas"
+set "VENV_DIR=%INSTALL_DIR%\.venv"
+set "VENV_PY=%VENV_DIR%\Scripts\python.exe"
+set "VENV_PYW=%VENV_DIR%\Scripts\pythonw.exe"
 
 echo This will install Autograder4Canvas to:
 echo   %INSTALL_DIR%
@@ -132,122 +147,147 @@ if /i not "%CONFIRM%"=="Y" (
 echo.
 echo Installing...
 
-:: Get the directory where this installer is located
-set "SOURCE_DIR=%~dp0"
+:: -------------------------------------------------------
+:: Create directory structure
+:: -------------------------------------------------------
+if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
 
-:: Create install directory
-if not exist "%INSTALL_DIR%\Programs" mkdir "%INSTALL_DIR%\Programs"
-if not exist "%INSTALL_DIR%\config" mkdir "%INSTALL_DIR%\config"
-if not exist "%INSTALL_DIR%\modules" mkdir "%INSTALL_DIR%\modules"
-if not exist "%INSTALL_DIR%\docs" mkdir "%INSTALL_DIR%\docs"
-
-:: Copy files
-echo   Copying program files...
-copy "%SOURCE_DIR%src\bootstrap.py" "%INSTALL_DIR%\" >nul
-copy "%SOURCE_DIR%src\run_autograder.py" "%INSTALL_DIR%\" >nul
-copy "%SOURCE_DIR%src\requirements.txt" "%INSTALL_DIR%\" >nul
-if exist "%SOURCE_DIR%src\autograder_utils.py" copy "%SOURCE_DIR%src\autograder_utils.py" "%INSTALL_DIR%\" >nul
-copy "%SOURCE_DIR%src\Programs\*.py" "%INSTALL_DIR%\Programs\" >nul
-
-:: Write xcopy exclusion list to INSTALL_DIR (no spaces in path, unlike %TEMP%)
+:: Write xcopy exclusion list
 set "XCOPY_EXCL=%INSTALL_DIR%\excl.tmp"
-> "%XCOPY_EXCL%" echo __pycache__
+>  "%XCOPY_EXCL%" echo __pycache__
 >> "%XCOPY_EXCL%" echo .pyc
+>> "%XCOPY_EXCL%" echo Trashed
+>> "%XCOPY_EXCL%" echo research
+>> "%XCOPY_EXCL%" echo Programs
+>> "%XCOPY_EXCL%" echo .ruff_cache
+>> "%XCOPY_EXCL%" echo .DS_Store
 
-:: Copy v2 files
-if exist "%SOURCE_DIR%src\config" (
-    echo   Copying v2 config files...
-    xcopy /E /I /Y /EXCLUDE:"%XCOPY_EXCL%" "%SOURCE_DIR%src\config" "%INSTALL_DIR%\config" >nul
-)
-if exist "%SOURCE_DIR%src\modules" (
-    echo   Copying v2 modules...
-    xcopy /E /I /Y /EXCLUDE:"%XCOPY_EXCL%" "%SOURCE_DIR%src\modules" "%INSTALL_DIR%\modules" >nul
-)
-if exist "%SOURCE_DIR%src\docs" (
-    echo   Copying documentation...
-    xcopy /E /I /Y "%SOURCE_DIR%src\docs" "%INSTALL_DIR%\docs" >nul
-)
+:: Copy src/ (full GUI source tree, excluding dev/legacy directories)
+echo   Copying program files...
+xcopy /E /I /Y /EXCLUDE:"%XCOPY_EXCL%" "%SRC_DIR%" "%INSTALL_DIR%\src" >nul
 del "%XCOPY_EXCL%" >nul 2>&1
 
-:: Copy icon if it exists
-if exist "%SOURCE_DIR%icon.ico" copy "%SOURCE_DIR%icon.ico" "%INSTALL_DIR%\" >nul
+:: Copy icon and uninstaller
+if exist "%ICON_SRC%" copy "%ICON_SRC%" "%INSTALL_DIR%\icon.ico" >nul
+copy "%SCRIPT_DIR%UNINSTALL.bat" "%INSTALL_DIR%\UNINSTALL.bat" >nul 2>&1
+if not exist "%INSTALL_DIR%\UNINSTALL.bat" (
+    if exist "%SCRIPT_DIR%..\Autograder4Canvas\UNINSTALL.bat" (
+        copy "%SCRIPT_DIR%..\Autograder4Canvas\UNINSTALL.bat" "%INSTALL_DIR%\UNINSTALL.bat" >nul
+    )
+)
 
-:: Create launcher batch file (bootstrap.py handles pip install on first run)
+:: -------------------------------------------------------
+:: Create virtual environment
+:: -------------------------------------------------------
+echo   Creating virtual environment...
+%PYTHON_CMD% -m venv "%VENV_DIR%"
+if %ERRORLEVEL% neq 0 (
+    echo.
+    echo   ERROR: Could not create virtual environment.
+    if "!PYTHON_CMD!"=="python" (
+        echo   If you installed Python from the Microsoft Store, it may not
+        echo   support venv. Install from https://www.python.org/downloads/ instead.
+    )
+    pause
+    exit /b 1
+)
+echo   Virtual environment created.
+
+:: -------------------------------------------------------
+:: Install dependencies
+:: Note: includes PySide6 (GUI), sentence-transformers (ML),
+::       and faster-whisper (audio). First install takes 5-15 min
+::       depending on internet speed (~2-4 GB download).
+:: -------------------------------------------------------
+echo   Installing required packages...
+echo   ^(This may take 5-15 minutes on first install^)
+echo.
+"%VENV_PY%" -m pip install --quiet --upgrade pip
+"%VENV_PY%" -m pip install --quiet -r "%INSTALL_DIR%\src\requirements.txt"
+if %ERRORLEVEL% neq 0 (
+    echo.
+    echo   WARNING: Some packages may not have installed correctly.
+    echo   The program may still work for core features.
+    echo   Check your internet connection and try re-running INSTALL.bat if needed.
+    echo.
+)
+echo   Packages installed.
+
+:: Download spaCy language model (non-blocking - grading works without it)
+echo   Downloading language model for Academic Integrity analysis...
+"%VENV_PY%" -m spacy download en_core_web_sm --quiet >nul 2>&1
+if %ERRORLEVEL% == 0 (
+    echo   Language model ready.
+) else (
+    echo   Note: Language model unavailable ^(non-critical^).
+)
+
+:: -------------------------------------------------------
+:: Create launcher batch (for repair/troubleshooting use)
+:: The desktop shortcut bypasses this and calls pythonw.exe directly.
+:: -------------------------------------------------------
 echo   Creating launcher...
 (
 echo @echo off
-echo setlocal enabledelayedexpansion
-echo cd /d "%INSTALL_DIR%"
-echo.
-echo :: Find Python - check PATH first, then common install locations
-echo set "PYTHON_CMD="
-echo where python >nul 2>&1 && set "PYTHON_CMD=python"
-echo if not defined PYTHON_CMD where python3 >nul 2>&1 && set "PYTHON_CMD=python3"
-echo.
-echo :: Also check standard user-install locations in case PATH wasn't updated
-echo if not defined PYTHON_CMD ^(
-echo     for /d %%%%d in ^("%LOCALAPPDATA%\Programs\Python\Python3*"^) do ^(
-echo         if exist "%%%%d\python.exe" set "PYTHON_CMD=%%%%d\python.exe"
-echo     ^)
-echo ^)
-echo.
-echo if not defined PYTHON_CMD ^(
-echo     echo.
-echo     echo Python is not installed or could not be found.
-echo     echo Please install it from https://www.python.org/downloads/
-echo     echo Make sure to check "Add Python to PATH" during installation.
-echo     echo.
+echo setlocal
+echo set "INSTALL_DIR=%INSTALL_DIR%"
+echo set "VENV_PYW=%VENV_PYW%"
+echo if not exist "%%VENV_PYW%%" ^(
+echo     echo Virtual environment not found. Please re-run INSTALL.bat to repair.
 echo     pause
 echo     exit /b 1
 echo ^)
-echo.
-echo %%PYTHON_CMD%% bootstrap.py %%*
-echo pause
+echo start "" "%%VENV_PYW%%" "%%INSTALL_DIR%%\src\gui_main.py"
 ) > "%INSTALL_DIR%\Autograder4Canvas.bat"
 
-:: Copy uninstaller into the install directory so it's always accessible
-echo   Installing uninstaller...
-copy "%SOURCE_DIR%UNINSTALL.bat" "%INSTALL_DIR%\UNINSTALL.bat" >nul
-
-:: Create shortcuts via a temporary PowerShell script
-:: Paths are resolved inside PowerShell (handles OneDrive Desktop, etc.)
+:: -------------------------------------------------------
+:: Create shortcuts via PowerShell
+:: Shortcut targets pythonw.exe directly (no console window).
+:: -------------------------------------------------------
 echo   Creating shortcuts...
 set "PS_TMP=%INSTALL_DIR%\shortcuts.ps1"
 
-::  Write the PS1 line-by-line with >> to avoid block-parser paren issues
->  "%PS_TMP%" echo $installDir    = '%INSTALL_DIR%'
->> "%PS_TMP%" echo $batPath       = Join-Path $installDir 'Autograder4Canvas.bat'
->> "%PS_TMP%" echo $uninstallPath = Join-Path $installDir 'UNINSTALL.bat'
->> "%PS_TMP%" echo $icoPath       = Join-Path $installDir 'icon.ico'
->> "%PS_TMP%" echo $ws            = New-Object -ComObject WScript.Shell
+>  "%PS_TMP%" echo $installDir  = '%INSTALL_DIR%'
+>> "%PS_TMP%" echo $pythonwPath = Join-Path $installDir '.venv\Scripts\pythonw.exe'
+>> "%PS_TMP%" echo $guiScript   = Join-Path $installDir 'src\gui_main.py'
+>> "%PS_TMP%" echo $icoPath     = Join-Path $installDir 'icon.ico'
+>> "%PS_TMP%" echo $srcDir      = Join-Path $installDir 'src'
+>> "%PS_TMP%" echo $uninstPath  = Join-Path $installDir 'UNINSTALL.bat'
+>> "%PS_TMP%" echo $ws          = New-Object -ComObject WScript.Shell
 >> "%PS_TMP%" echo(
->> "%PS_TMP%" echo # Resolve real Desktop and Start Menu paths (works with OneDrive redirection)
+>> "%PS_TMP%" echo # Resolve real Desktop and Start Menu paths (handles OneDrive redirection)
 >> "%PS_TMP%" echo $desktop = [Environment]::GetFolderPath('Desktop')
 >> "%PS_TMP%" echo $menuDir = [Environment]::GetFolderPath('Programs')
 >> "%PS_TMP%" echo if (-not (Test-Path $menuDir)) { New-Item -Force -ItemType Directory $menuDir ^| Out-Null }
 >> "%PS_TMP%" echo(
+>> "%PS_TMP%" echo # Desktop shortcut - launches GUI directly, no console window
 >> "%PS_TMP%" echo $s = $ws.CreateShortcut((Join-Path $desktop 'Autograder4Canvas.lnk'))
->> "%PS_TMP%" echo $s.TargetPath       = $batPath
->> "%PS_TMP%" echo $s.WorkingDirectory = $installDir
+>> "%PS_TMP%" echo $s.TargetPath       = $pythonwPath
+>> "%PS_TMP%" echo $s.Arguments        = "`"$guiScript`""
+>> "%PS_TMP%" echo $s.WorkingDirectory = $srcDir
 >> "%PS_TMP%" echo if (Test-Path $icoPath) { $s.IconLocation = $icoPath }
 >> "%PS_TMP%" echo $s.Save()
 >> "%PS_TMP%" echo(
+>> "%PS_TMP%" echo # Start Menu shortcut
 >> "%PS_TMP%" echo $s = $ws.CreateShortcut((Join-Path $menuDir 'Autograder4Canvas.lnk'))
->> "%PS_TMP%" echo $s.TargetPath       = $batPath
->> "%PS_TMP%" echo $s.WorkingDirectory = $installDir
+>> "%PS_TMP%" echo $s.TargetPath       = $pythonwPath
+>> "%PS_TMP%" echo $s.Arguments        = "`"$guiScript`""
+>> "%PS_TMP%" echo $s.WorkingDirectory = $srcDir
 >> "%PS_TMP%" echo if (Test-Path $icoPath) { $s.IconLocation = $icoPath }
 >> "%PS_TMP%" echo $s.Save()
 >> "%PS_TMP%" echo(
+>> "%PS_TMP%" echo # Uninstall shortcut in Start Menu
 >> "%PS_TMP%" echo $s = $ws.CreateShortcut((Join-Path $menuDir 'Uninstall Autograder4Canvas.lnk'))
->> "%PS_TMP%" echo $s.TargetPath       = $uninstallPath
+>> "%PS_TMP%" echo $s.TargetPath       = $uninstPath
 >> "%PS_TMP%" echo $s.WorkingDirectory = $installDir
 >> "%PS_TMP%" echo $s.Description      = 'Uninstall Autograder4Canvas'
 >> "%PS_TMP%" echo $s.Save()
 
 powershell -ExecutionPolicy Bypass -File "%PS_TMP%"
 if %ERRORLEVEL% neq 0 (
+    echo.
     echo   Warning: Shortcuts could not be created automatically.
-    echo   You can still run the program by opening:
+    echo   You can still launch the program by running:
     echo     %INSTALL_DIR%\Autograder4Canvas.bat
 )
 del "%PS_TMP%" >nul 2>&1
@@ -260,12 +300,10 @@ echo.
 echo Program installed to: %INSTALL_DIR%
 echo.
 echo You can now run Autograder4Canvas by:
-echo   1. Clicking the Desktop shortcut
+echo   1. Clicking the Desktop shortcut  ^(no terminal window^)
 echo   2. Finding it in the Start Menu
 echo.
-echo To uninstall, run UNINSTALL.bat from the original zip,
-echo or from the installed folder at:
-echo   %INSTALL_DIR%\UNINSTALL.bat
+echo To uninstall: run UNINSTALL.bat from %INSTALL_DIR%
 echo.
 
 :END
