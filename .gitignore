@@ -24,6 +24,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/*
+!build/windows/
 !build/windows-portable/
 !build/mac/
 eggs/

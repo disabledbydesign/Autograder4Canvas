@@ -73,4 +73,4 @@ if %ERRORLEVEL% == 0 (
 )
 
 echo.
-pause
+if not defined NO_PAUSE pause
