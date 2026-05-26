@@ -331,7 +331,7 @@ class RunDialog(QDialog):
         wa_lo = QVBoxLayout(well_a)
         wa_lo.setContentsMargins(12, 10, 12, 10)
         self._mark_incomplete_opt = OptionPair(
-            "Grade absent as Incomplete",
+            "Mark absent as Incomplete",
             "Leave absent ungraded",
             value=False,
         )

@@ -435,8 +435,7 @@ class InsightsPanel(QWidget):
 
         # ── Top navigation toggle (always visible) ──
         self._view_toggle = SegmentedToggle(
-            ("New Analysis", "setup"),
-            ("Live", "running"),
+            ("Live Feed", "running"),
             ("Results", "review"),
             accent="amber",
         )
@@ -446,25 +445,26 @@ class InsightsPanel(QWidget):
         self._state_stack = QStackedWidget()
         root.addWidget(self._state_stack, 1)
 
-        # Three states
-        self._state_stack.addWidget(self._build_setup_view())     # 0
-        self._state_stack.addWidget(self._build_running_view())   # 1
-        self._state_stack.addWidget(self._build_review_view())    # 2
+        # Three states (setup kept internally for running-state transitions)
+        self._state_stack.addWidget(self._build_setup_view())     # 0 (internal)
+        self._state_stack.addWidget(self._build_running_view())   # 1 live feed
+        self._state_stack.addWidget(self._build_review_view())    # 2 results
 
-        self._state_stack.setCurrentIndex(0)
+        self._state_stack.setCurrentIndex(2)
 
     def _on_view_toggle(self, mode: str) -> None:
         """Handle top-level view toggle clicks."""
-        idx = {"setup": 0, "running": 1, "review": 2}.get(mode, 0)
+        idx = {"running": 1, "review": 2}.get(mode, 2)
         self._state_stack.setCurrentIndex(idx)
 
     def _switch_view(self, idx: int) -> None:
         """Switch state stack and sync the top navigation toggle."""
-        self._state_stack.setCurrentIndex(idx)
-        mode = {0: "setup", 1: "running", 2: "review"}.get(idx, "setup")
-        self._view_toggle.set_mode(mode)
+        # idx=0 (setup) is internal-only — redirect to Results so user sees content
         if idx == 0:
-            self._refresh_incomplete_notice()
+            idx = 2
+        self._state_stack.setCurrentIndex(idx)
+        mode = {1: "running", 2: "review"}.get(idx, "review")
+        self._view_toggle.set_mode(mode)
 
     # ── Setup view ─────────────────────────────────────────────────────
 
@@ -562,7 +562,7 @@ class InsightsPanel(QWidget):
         footer.addWidget(self._setup_summary)
         footer.addStretch()
 
-        self._review_btn = QPushButton("View Prior Insights")
+        self._review_btn = QPushButton("Prior Runs")
         make_secondary_button(self._review_btn)
         self._review_btn.clicked.connect(self._show_prior_insights)
         footer.addWidget(self._review_btn)
@@ -1449,6 +1449,18 @@ class InsightsPanel(QWidget):
         outer.setContentsMargins(SPACING_LG, SPACING_LG, SPACING_LG, SPACING_LG)
         outer.setSpacing(SPACING_MD)
 
+        # Results header: section label + New Analysis action
+        results_hdr = QHBoxLayout()
+        results_hdr.setSpacing(SPACING_SM)
+        results_hdr.addStretch()
+        self._new_analysis_btn = QPushButton("+ New Analysis")
+        make_secondary_button(self._new_analysis_btn)
+        self._new_analysis_btn.clicked.connect(
+            lambda: self._state_stack.setCurrentIndex(0)
+        )
+        results_hdr.addWidget(self._new_analysis_btn)
+        outer.addLayout(results_hdr)
+
         # Layer tabs
         self._layer_toggle = SegmentedToggle(
             ("Patterns", "patterns"),
@@ -1456,8 +1468,6 @@ class InsightsPanel(QWidget):
             ("Themes", "themes"),
             ("Outliers", "outliers"),
             ("Report", "report"),
-            ("Feedback", "feedback"),
-            ("Semester", "semester"),
             accent="amber",
         )
         self._layer_toggle.mode_changed.connect(self._on_layer_changed)
@@ -3994,22 +4004,6 @@ class InsightsPanel(QWidget):
             )
             lo.addWidget(canvas_link)
 
-        # "View semester trajectory" cross-link (Issue 17)
-        semester_link = QLabel(
-            f'<a style="color: {PHOSPHOR_DIM}; font-style: italic;">'
-            f'View semester trajectory \u2192</a>'
-        )
-        semester_link.setCursor(Qt.CursorShape.PointingHandCursor)
-        semester_link.setStyleSheet(
-            f"color: {PHOSPHOR_DIM}; font-size: {px(11)}px;"
-            f" background: transparent; border: none; padding-top: 8px;"
-        )
-        semester_link.mousePressEvent = (
-            lambda _: self._layer_toggle.set_mode("semester")
-            if hasattr(self, "_layer_toggle") else None
-        )
-        lo.addWidget(semester_link)
-
         lo.addStretch()
         return widget
 
@@ -6061,7 +6055,7 @@ class InsightsPanel(QWidget):
     def _on_analysis_error(self, message: str) -> None:
         self._stop_elapsed_timer()
         self._progress_label.setText(f"Error: {message}")
-        self._progress_detail.setText("Return to setup to try again.")
+        self._progress_detail.setText("Start a new analysis from Bulk Run.")
 
     def _on_cancel(self) -> None:
         if self._worker:
@@ -6537,8 +6531,7 @@ class InsightsPanel(QWidget):
         """Switch the layer content stack, lazily loading data."""
         layer_map = {
             "patterns": 0, "codings": 1, "themes": 2,
-            "outliers": 3, "report": 4, "feedback": 5,
-            "semester": 6,
+            "outliers": 3, "report": 4,
         }
         self._layer_stack.setCurrentIndex(layer_map.get(mode, 0))
         self._load_layer(mode)

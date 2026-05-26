@@ -947,7 +947,7 @@ class TemplateEditorDialog(QDialog):
         left = QFrame()
         left.setObjectName("templatePane")
         left.setStyleSheet(_PANE_QSS)
-        left.setMinimumWidth(180)
+        left.setMinimumWidth(220)
         left_lo = QVBoxLayout(left)
         left_lo.setContentsMargins(10, 10, 10, 10)
         left_lo.setSpacing(SPACING_SM)
@@ -979,7 +979,7 @@ class TemplateEditorDialog(QDialog):
 
         btn_row.addStretch()
 
-        self._reset_btn = QPushButton("Reset Defaults")
+        self._reset_btn = QPushButton("Defaults")
         self._reset_btn.setStyleSheet(_SMALL_BTN_QSS)
         self._reset_btn.setToolTip(
             "Restore all system default templates to their original settings (keeps custom ones)"
@@ -1015,9 +1015,7 @@ class TemplateEditorDialog(QDialog):
         mid_hdr_row.addWidget(self._save_btn)
         mid_lo.addLayout(mid_hdr_row)
 
-        sep = QFrame()
-        sep.setFixedHeight(1)
-        sep.setStyleSheet(f"background: {BORDER_DARK}; border: none;")
+        sep = make_h_rule()
         mid_lo.addWidget(sep)
 
         self._basic_form = _BasicGradingForm()
@@ -1045,9 +1043,7 @@ class TemplateEditorDialog(QDialog):
         right_hdr_row.addStretch()
         right_lo.addLayout(right_hdr_row)
 
-        sep2 = QFrame()
-        sep2.setFixedHeight(1)
-        sep2.setStyleSheet(f"background: {BORDER_DARK}; border: none;")
+        sep2 = make_h_rule()
         right_lo.addWidget(sep2)
 
         self._aic_form = _AICForm()
@@ -1059,15 +1055,12 @@ class TemplateEditorDialog(QDialog):
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 1)
-        splitter.setSizes([210, 340, 380])
+        splitter.setSizes([250, 330, 350])
 
         root.addWidget(splitter, 1)
 
         # ── Footer ─────────────────────────────────────────────────────
-        footer_sep = QFrame()
-        footer_sep.setFixedHeight(1)
-        footer_sep.setStyleSheet(f"background: {BORDER_DARK}; border: none;")
-        root.addWidget(footer_sep)
+        root.addWidget(make_h_rule())
 
         footer = QHBoxLayout()
         self._status_lbl = QLabel("")

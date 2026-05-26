@@ -718,7 +718,7 @@ class BulkRunPage(QWidget):
         lo.addSpacing(4)
 
         self._opt_mark_incomplete = OptionRocker(
-            "Grade absent\nwork as Incomplete",
+            "Mark absent\nwork as Incomplete",
             "Leave absent\nwork ungraded",
             value=False,
         )
@@ -746,9 +746,9 @@ class BulkRunPage(QWidget):
         lo.addSpacing(4)
 
         self._opt_run_aic = SegmentedToggle(
-            ("Grade\nonly",   "grade_only"),
-            ("Grade\n+ AIC",  "grade_and_aic"),
-            ("AIC\nonly",     "aic_only"),
+            ("Grade",         "grade_only"),
+            ("Grade + AIC",   "grade_and_aic"),
+            ("AIC",           "aic_only"),
             accent="rose",
         )
         self._opt_run_aic.setToolTip(

@@ -894,12 +894,21 @@ def make_section_label(text: str) -> "QLabel":
 
 
 def make_h_rule() -> "QFrame":
-    """Return a 1 px horizontal separator in BORDER_DARK colour."""
+    """Return a 1 px amber gradient separator — bright at centre, fading at edges."""
     from PySide6.QtWidgets import QFrame
     rule = QFrame()
-    rule.setFrameShape(QFrame.Shape.HLine)
-    rule.setStyleSheet(f"background: {BORDER_DARK}; border: none;")
     rule.setFixedHeight(1)
+    rule.setStyleSheet("""
+        QFrame {
+            background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
+                stop:0.00 rgba(240,168,48,0),
+                stop:0.20 rgba(240,168,48,89),
+                stop:0.50 rgba(240,168,48,179),
+                stop:0.80 rgba(240,168,48,89),
+                stop:1.00 rgba(240,168,48,0));
+            border: none;
+        }
+    """)
     return rule
 
 

@@ -137,6 +137,7 @@ class SettingsPanel(QWidget):
         left_lo.setSpacing(SPACING_SM)
         self._build_connection_section(left_lo)
         cols.addWidget(left_pane, stretch=3)
+        left_pane.setMaximumWidth(520)
 
         right_col = QVBoxLayout()
         right_col.setSpacing(SPACING_SM)
@@ -158,6 +159,14 @@ class SettingsPanel(QWidget):
         right_col.addStretch()
         cols.addLayout(right_col, stretch=1)
         vbox.addLayout(cols)
+
+        # Engagement Analysis pane (full-width, between connection and insights)
+        aic_pane = make_content_pane("settingsAICPane")
+        aic_lo = QVBoxLayout(aic_pane)
+        aic_lo.setContentsMargins(SPACING_MD, SPACING_MD, SPACING_MD, SPACING_MD)
+        aic_lo.setSpacing(SPACING_SM)
+        self._build_engagement_section(aic_lo)
+        vbox.addWidget(aic_pane)
 
         # Insights & AI section (full-width below the two columns)
         insights_pane = make_content_pane("settingsInsightsPane")
@@ -235,8 +244,9 @@ class SettingsPanel(QWidget):
         self._test_status.setStyleSheet(f"font-size: {px(12)}px; padding: 2px 0; background: transparent;")
         lo.addWidget(self._test_status)
 
-        lo.addWidget(make_h_rule())
+    def _build_engagement_section(self, lo: QVBoxLayout) -> None:
         lo.addWidget(make_section_label("Engagement Analysis — Per-Profile Calibration"))
+        lo.addWidget(make_h_rule())
         aic_note = QLabel(
             "These settings travel with the institution profile. "
             "Weights adjust to your school's specific student population."
@@ -288,18 +298,20 @@ class SettingsPanel(QWidget):
         lo.addLayout(pop_row)
 
         lo.addSpacing(4)
-        self._pop_nd_check = SwitchToggle("Neurodivergent-aware scoring", wrap_width=200)
+        self._pop_nd_check = SwitchToggle("Neurodivergent-aware scoring", wrap_width=400)
         lo.addWidget(self._pop_nd_check)
 
         lo.addSpacing(8)
         tune_btn = QPushButton("Fine-Tune Signals…")
         make_secondary_button(tune_btn)
         tune_btn.clicked.connect(self._on_open_signal_tuning)
-        lo.addWidget(tune_btn)
-        lo.addStretch()
+        tune_row = QHBoxLayout()
+        tune_row.addWidget(tune_btn)
+        tune_row.addStretch()
+        lo.addLayout(tune_row)
 
     def _build_insights_section(self, lo: QVBoxLayout) -> None:
-        lo.addWidget(make_section_label("Insights & AI"))
+        lo.addWidget(make_section_label("Insights"))
         lo.addWidget(make_h_rule())
 
         # Setup wizard launch row
@@ -401,11 +413,16 @@ class SettingsPanel(QWidget):
         right.setSpacing(SPACING_SM)
 
         right.addWidget(_field_label("Institutional / Cloud API (optional)"))
-        right.addWidget(QLabel(
-            "If your institution provides an AI API, configure it here.\n"
-            "Used for Medium and Deep Thinking analysis tiers.\n"
+        _cloud_desc = QLabel(
+            "If your institution provides an AI API, configure it here. "
+            "Used for Medium and Deep Thinking analysis tiers. "
             "Check with your IT department for FERPA compliance."
-        ))
+        )
+        _cloud_desc.setWordWrap(True)
+        _cloud_desc.setStyleSheet(
+            f"color: {PHOSPHOR_DIM}; font-size: {px(11)}px; background: transparent; border: none;"
+        )
+        right.addWidget(_cloud_desc)
 
         right.addWidget(_field_label("API Base URL"))
         self._cloud_url_edit = QLineEdit()
@@ -476,12 +493,16 @@ class SettingsPanel(QWidget):
         self._throttle_spin.setValue(0)
         self._throttle_spin.setSuffix(" seconds")
         throttle_col.addWidget(self._throttle_spin)
-        throttle_col.addWidget(QLabel(
-            "How long to pause between AI prompts.\n"
-            "0 = fastest (best for overnight / while you sleep).\n"
-            "10-15 = keeps your computer responsive if you're\n"
-            "still working while the analysis runs."
-        ))
+        _throttle_desc = QLabel(
+            "How long to pause between AI prompts. "
+            "0 = fastest (best for overnight / while you sleep). "
+            "10–15 keeps your computer responsive if you're still working while the analysis runs."
+        )
+        _throttle_desc.setWordWrap(True)
+        _throttle_desc.setStyleSheet(
+            f"color: {PHOSPHOR_DIM}; font-size: {px(11)}px; background: transparent; border: none;"
+        )
+        throttle_col.addWidget(_throttle_desc)
         bottom.addLayout(throttle_col, stretch=1)
 
         # Whisper model
@@ -496,10 +517,14 @@ class SettingsPanel(QWidget):
         self._whisper_combo.addItem("large-v3-turbo — large quality, faster, ~1.5GB", "large-v3-turbo")
         self._whisper_combo.setCurrentIndex(3)  # medium
         whisper_col.addWidget(self._whisper_combo)
-        whisper_col.addWidget(QLabel(
-            "Used for transcribing audio/video submissions.\n"
-            "Runs locally — no audio data leaves your machine."
-        ))
+        _whisper_desc = QLabel(
+            "Used for transcribing audio/video submissions. Runs locally — no audio data leaves your machine."
+        )
+        _whisper_desc.setWordWrap(True)
+        _whisper_desc.setStyleSheet(
+            f"color: {PHOSPHOR_DIM}; font-size: {px(11)}px; background: transparent; border: none;"
+        )
+        whisper_col.addWidget(_whisper_desc)
         bottom.addLayout(whisper_col, stretch=1)
 
         # Keep Awake
@@ -513,22 +538,26 @@ class SettingsPanel(QWidget):
         import platform
         if platform.system() == "Darwin":
             awake_note = (
-                "Prevents your Mac from sleeping during analysis.\n"
-                "For lid-closed operation: System Settings → Battery\n"
-                "→ Options → 'Prevent sleeping when display is off'\n"
-                "must be enabled, and computer must be plugged in."
+                "Prevents your Mac from sleeping during analysis. "
+                "For lid-closed operation: enable 'Prevent sleeping when display is off' "
+                "in System Settings → Battery → Options, and keep the computer plugged in."
             )
         elif platform.system() == "Windows":
             awake_note = (
-                "Disables sleep while analysis runs (AC power).\n"
+                "Disables sleep while analysis runs (AC power). "
                 "Normal sleep settings are restored when done."
             )
         else:
             awake_note = (
-                "Prevents system sleep while analysis runs.\n"
+                "Prevents system sleep while analysis runs. "
                 "Uses systemd-inhibit if available."
             )
-        awake_col.addWidget(QLabel(awake_note))
+        _awake_desc = QLabel(awake_note)
+        _awake_desc.setWordWrap(True)
+        _awake_desc.setStyleSheet(
+            f"color: {PHOSPHOR_DIM}; font-size: {px(11)}px; background: transparent; border: none;"
+        )
+        awake_col.addWidget(_awake_desc)
         bottom.addLayout(awake_col, stretch=1)
 
         lo.addLayout(bottom)
@@ -539,16 +568,20 @@ class SettingsPanel(QWidget):
         fb_row.setSpacing(SPACING_SM)
         fb_row.addWidget(_field_label("Draft Student Feedback"))
         self._draft_feedback_toggle = SwitchToggle(
-            "Generate draft feedback for each student", wrap_width=260
+            "Generate draft feedback for each student", wrap_width=400
         )
         fb_row.addWidget(self._draft_feedback_toggle)
         fb_row.addStretch()
         lo.addLayout(fb_row)
-        lo.addWidget(QLabel(
-            "When enabled, the insights pipeline drafts personalized feedback\n"
-            "for each student based on your analysis lens. You review and\n"
-            "approve each draft before anything is posted."
-        ))
+        _fb_desc = QLabel(
+            "When enabled, the insights pipeline drafts personalized feedback for each student "
+            "based on your analysis lens. You review and approve each draft before anything is posted."
+        )
+        _fb_desc.setWordWrap(True)
+        _fb_desc.setStyleSheet(
+            f"color: {PHOSPHOR_DIM}; font-size: {px(11)}px; background: transparent; border: none;"
+        )
+        lo.addWidget(_fb_desc)
 
     def _on_llm_backend_changed(self, index: int) -> None:
         is_ollama = self._llm_backend_combo.currentData() == "ollama"
