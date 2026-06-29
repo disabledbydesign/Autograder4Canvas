@@ -2617,7 +2617,7 @@ about analytically engaged students. But the actual observation TEXT for the
 controls describes pure intellectual engagement:
 
 - WB09 Priya: "demonstrating a strong grasp... Her connection to Professor
-  Garcia's concept of 'ambient threat' is particularly insightful"
+  the concept of 'ambient threat' is particularly insightful"
 - WB10 DeAndre: "powerfully connecting the theoretical framework to a deeply
   rooted, lived understanding within his community"
 

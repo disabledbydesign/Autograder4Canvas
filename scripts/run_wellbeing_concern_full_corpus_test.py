@@ -244,7 +244,7 @@ WELLBEING_SIGNAL_CASES = [
             "status, race, and economic precarity simultaneously. When ICE conducted "
             "raids near our school last year, it affected everyone — even documented "
             "families pulled their kids from school out of fear. The reading connects "
-            "to what Professor Garcia calls 'ambient threat' — the way immigration "
+            "to what one scholar calls 'ambient threat' — the way immigration "
             "enforcement creates stress for entire communities, not just individuals "
             "with precarious status. I think this is one of the clearest examples of "
             "intersectionality in practice: the experience of being Latina in this "

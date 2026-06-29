@@ -168,3 +168,6 @@ Student data is processed in memory only — never written to disk except for ex
 - Comments explain WHY, not just what
 - Graceful error handling with helpful messages
 - Modularity: single focused operations, not multi-step bundles
+
+## TODO — privacy cleanup (added 2026-06-28)
+Scrub the leaked real colleague name (tied to the "ambient threat" concept; see git history) from committed synthetic-essay/test content — it originated as a leak in the WB09 synthetic essay. Files: `scripts/run_wellbeing_concern_full_corpus_test.py`, `scripts/run_alt_hypothesis_tests.py`, `scripts/run_wellbeing_concern_WITH_CONTEXT_full_corpus_test.py`, `docs/research/experiment_log.md`. Replace with a pseudonym. Note: the name is also in git history — use git-filter-repo/BFG if full removal is needed, not just a new commit. ("Maria Garcia" in `prompts.py`/`workers.py`/tests is an innocuous placeholder student name — leave it.)
